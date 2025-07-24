@@ -2,7 +2,7 @@ name: fabricengineer-redis
 services:
   redis:
     image: redis:8.0
-    container_name: fabricengineer-redis
+    container_name: fabricengineer-redis-tz
     ports:
       - "6379:6379"
     volumes:
