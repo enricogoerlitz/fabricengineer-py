@@ -1,2 +1,5 @@
+from fabricengineer import hello, print_spark_version
+
+
 def test_init():
-    pass
+    assert isinstance(hello(), str)
