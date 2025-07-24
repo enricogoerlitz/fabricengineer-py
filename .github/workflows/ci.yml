@@ -28,14 +28,13 @@ jobs:
       # - name: Start Docker Compose
       #   run: docker compose -f docker/local/docker-compose.yml up -d
 
-      # - name: Wait for Redis to be ready (max 60s)
+      # - name: Wait for Redis to be ready
+      #   timeout-minutes: 1
       #   run: |
-      #     timeout 60 bash -c '
-      #       until docker exec fabricengineer-redis redis-cli ping | grep -q PONG; do
-      #         echo "Waiting for Redis..."
-      #         sleep 1
-      #       done
-      #     '
+      #     until docker exec fabricengineer-redis redis-cli ping | grep -q PONG; do
+      #       echo "Waiting for Redis..."
+      #       sleep 1
+      #     done
 
       - name: Run tests
         run: uv run pytest
