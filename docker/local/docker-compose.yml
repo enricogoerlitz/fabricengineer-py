@@ -1,0 +1,13 @@
+name: agentwebsearch
+services:
+  redis:
+    image: redis:8.0
+    container_name: agentwebsearch-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:

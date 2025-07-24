@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies via uv
+        run: uv sync
+
+      - name: Start Docker Compose
+        run: docker compose -f docker/local/docker-compose.yml up -d
+
+      - name: Wait for Redis to be ready
+        run: |
+          until docker exec fabricengineer-redis redis-cli ping | grep -q PONG; do
+            echo "Waiting for Redis..."
+            sleep 1
+          done
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Shut down Docker Compose
+        if: always()
+        run: docker compose -f docker/local/docker-compose.yml down
