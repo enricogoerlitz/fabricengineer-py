@@ -1,4 +1,4 @@
-from fabricengineer import hello, print_spark_version
+from fabricengineer import hello
 
 
 def test_init():
