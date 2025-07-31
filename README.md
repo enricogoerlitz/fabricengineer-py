@@ -10,7 +10,6 @@
 
 ### Run Silver Ingestion
 
-
 #### SilverIngesationInsertOnly
 
 ```python
