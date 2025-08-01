@@ -1,7 +1,7 @@
 from datetime import datetime
 from dataclasses import dataclass
 from pyspark.sql import SparkSession, functions as F, types as T
-from fabricengineer.transform.silver.base import LakehouseTable
+from fabricengineer.transform.lakehouse import LakehouseTable
 from fabricengineer.transform.silver.insertonly import get_mock_save_path
 
 

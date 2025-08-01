@@ -2,9 +2,9 @@ import pytest
 from uuid import uuid4
 from pyspark.sql import SparkSession
 from fabricengineer.transform.silver.insertonly import (
-    LakehouseTable,
     SilverIngestionInsertOnlyService
 )
+from fabricengineer.transform.lakehouse import LakehouseTable
 
 
 default_etl_kwargs = {

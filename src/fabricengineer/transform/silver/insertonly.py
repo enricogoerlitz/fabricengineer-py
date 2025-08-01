@@ -1,58 +1,24 @@
 import os
+
 from datetime import datetime
 from typing import Callable
-from uuid import uuid4
-from dataclasses import dataclass
-
 from pyspark.sql import (
     SparkSession,
     DataFrame,
     functions as F,
-    types as T,
     Window
 )
 
-
-@F.udf(returnType=T.StringType())
-def generate_uuid():
-    """Generiert eine UUID4"""
-    return str(uuid4())
-
-
-@dataclass(frozen=True)
-class ConstantColumn:
-    """Class for adding a column with constant value to etl"""
-    name: str
-    value: str
-    part_of_nk: bool = False
-
-    def __post_init__(self):
-        """
-        Nach initialisierung wird der name in UPPERCASE umgewandelt.
-        """
-        object.__setattr__(self, "name", self.name.upper())
+from fabricengineer.transform.silver.utils import (
+    LakehouseTable,
+    ConstantColumn,
+    generate_uuid,
+    get_mock_save_path
+)
+from fabricengineer.transform.silver.base import BaseSilverIngestionService
 
 
-@dataclass
-class LakehouseTable:
-    lakehouse: str
-    schema: str
-    table: str
-
-    @property
-    def table_path(self) -> str:
-        return f"{self.lakehouse}.{self.schema}.{self.table}"
-
-
-def get_mock_save_path(table: LakehouseTable) -> str:
-    if table is None:
-        raise ValueError("Table is not initialized.")
-    table_path = table.table_path.replace(".", "/")
-    full_table_path = f"tmp/lakehouse/{table_path}"
-    return full_table_path
-
-
-class SilverIngestionInsertOnlyService:
+class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
     _is_initialized: bool = False
 
     def init(

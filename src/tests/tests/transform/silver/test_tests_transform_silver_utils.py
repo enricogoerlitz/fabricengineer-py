@@ -1,8 +1,8 @@
 import os
 
 from pyspark.sql import SparkSession, types as T, functions as F
-from fabricengineer.transform.silver.base import LakehouseTable
-from fabricengineer.transform.silver.insertonly import get_mock_save_path
+from fabricengineer.transform.lakehouse import LakehouseTable
+from fabricengineer.transform.silver.utils import get_mock_save_path
 from tests.transform.silver.utils import BronzeDataFrameRecord, BronzeDataFrameDataGenerator
 
 
