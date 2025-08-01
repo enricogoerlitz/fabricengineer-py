@@ -1,3 +1,5 @@
+tmp/
+Files/
 # Custom
 .vscode/
 .DS_Store

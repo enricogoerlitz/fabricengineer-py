@@ -45,7 +45,6 @@ class MaterializedLakeView:
         return self
 
     def _get_init_spark(self, spark_: SparkSession) -> SparkSession | None:
-        # if isinstance(spark_, SparkSession):
         if isinstance(spark_, SparkSession):
             return spark_
         try:
@@ -124,6 +123,9 @@ class MaterializedLakeView:
         try:
             if not self.notebookutils.fs.exists(path):
                 return None
+            if self._is_testing_mock:
+                with open(path, 'r') as file:
+                    return file.read()
             df = self.spark.read.text(path, wholetext=True)
             mlv_code = df.collect()[0][0]
             return mlv_code
@@ -142,30 +144,31 @@ class MaterializedLakeView:
             raise RuntimeError(f"Fehler beim Schreiben der Datei: {e}")
 
     def create_schema(self) -> None:
+        create_schema = f"CREATE SCHEMA IF NOT EXISTS {self.schema_path}"
+        print(create_schema)
+
         if self._is_testing_mock:
-            print(f"Mock: CREATE SCHEMA {self.schema_path}")
             return None
 
-        create_schema = f"CREATE SCHEMA IF NOT EXISTS {self.schema_path}"
         return self.spark.sql(create_schema)
 
     def create(self, sql: str) -> DataFrame:
+        create_mlv = f"CREATE MATERIALIZED LAKE VIEW {self.table_path}\nAS\n{sql}"
+
         self.create_schema()
+        print(f"CREATE MLV: {self.table_path}")
         if self._is_testing_mock:
-            print(f"Mock: CREATE MLV {self.table_path}")
             return None
 
-        create_mlv = f"CREATE MATERIALIZED LAKE VIEW {self.table_path}\nAS\n{sql}"
-        print(f"CREATE MLV: {self.table_path}")
         return self.spark.sql(create_mlv)
 
     def drop(self) -> str:
+        drop_mlv = f"DROP MATERIALIZED LAKE VIEW {self.table_path}"
+        print(drop_mlv)
+
         if self._is_testing_mock:
-            print(f"Mock: DROP MLV {self.table_path}")
             return None
 
-        drop_mlv = f"DROP MATERIALIZED LAKE VIEW {self.table_path}"
-        print(f"DROP MLV: {self.table_path}")
         return self.spark.sql(drop_mlv)
 
     def create_or_replace(self, sql: str, mock_is_existing: bool = None) -> DataFrame:
@@ -189,7 +192,7 @@ class MaterializedLakeView:
             return res
 
         elif sql == mlv_code_current and is_existing:
-            print("Nothing has changed")
+            print("Nothing has changed.")
             return None
 
         print(f"REPLACE MLV: {self.table_path}")
@@ -199,13 +202,13 @@ class MaterializedLakeView:
         return res
 
     def refresh(self, full_refresh: bool) -> DataFrame:
-        if self._is_testing_mock:
-            print(f"Mock: REFRESH MLV {self.table_path} (FULL={full_refresh})")
-            return None
-
         full_refresh_str = "FULL" if full_refresh else ""
         refresh_mlv = f"REFRESH MATERIALIZED LAKE VIEW {self.table_path} {full_refresh_str}"
-        print(f"REFRESH MLV: {self.table_path} (FULL={full_refresh})")
+        print(refresh_mlv)
+
+        if self._is_testing_mock:
+            return None
+
         return self.spark.sql(refresh_mlv)
 
     def to_dict(self) -> None:
