@@ -11,6 +11,7 @@ class BronzeDataFrameRecord:
     name: str
     created_at: str = "2023-01-01"
     updated_at: str = "2023-01-01"
+    ncol: str = None
 
 
 class BronzeDataFrameDataGenerator:
@@ -59,13 +60,28 @@ class BronzeDataFrameDataGenerator:
             .orderBy(F.col("id").asc(), F.col("created_at").asc())
         return self
 
-    def add_records(self, records: list[BronzeDataFrameRecord]) -> 'BronzeDataFrameDataGenerator':
-        new_data = [
-            (record.id, record.name, datetime.strptime(record.created_at, "%Y-%m-%d"), datetime.strptime(record.updated_at, "%Y-%m-%d"))
-            for record in records
-        ]
-        new_df = self.spark.createDataFrame(new_data, schema=self.df.schema)
+    def add_ncol_column(self) -> 'BronzeDataFrameDataGenerator':
+        self.df = self.df.withColumn("ncol", F.lit(None).cast(T.StringType()))
+        return self
 
+    def remove_ncol_column(self) -> 'BronzeDataFrameDataGenerator':
+        if "ncol" in self.df.columns:
+            self.df = self.df.drop("ncol")
+        return self
+
+    def add_records(self, records: list[BronzeDataFrameRecord]) -> 'BronzeDataFrameDataGenerator':
+        if "ncol" in self.df.schema.fieldNames():
+            new_data = [
+                (record.id, record.name, datetime.strptime(record.created_at, "%Y-%m-%d"), datetime.strptime(record.updated_at, "%Y-%m-%d"), record.ncol)
+                for record in records
+            ]
+        else:
+            new_data = [
+                (record.id, record.name, datetime.strptime(record.created_at, "%Y-%m-%d"), datetime.strptime(record.updated_at, "%Y-%m-%d"))
+                for record in records
+            ]
+
+        new_df = self.spark.createDataFrame(new_data, schema=self.df.schema)
         self.df = self.df.union(new_df)
         return self
 

@@ -198,3 +198,79 @@ def test_empty_operations(spark_: SparkSession, ):
 
     # Count should remain the same
     assert generator.df.count() == initial_count
+
+
+def test_add_ncol_column(spark_: SparkSession):
+    """Test adding ncol column to the DataFrame"""
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    generator.write().read()
+
+    assert "ncol" not in generator.df.columns
+
+    generator.add_ncol_column().write().read()
+
+    assert "ncol" in generator.df.columns
+
+    # Check that ncol is None for all records
+    ncol_values = generator.df.select("ncol").collect()
+    assert all(row["ncol"] is None for row in ncol_values)
+
+
+def test_remove_ncol_column(spark_: SparkSession):
+    """Test removing ncol column from the DataFrame"""
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    generator.add_ncol_column().write().read()
+
+    assert "ncol" in generator.df.columns
+
+    generator.remove_ncol_column().write().read()
+
+    assert "ncol" not in generator.df.columns
+
+
+def test_add_records_with_ncol(spark_: SparkSession):
+    """Test adding records with ncol column"""
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    generator.add_ncol_column().write().read()
+
+    new_records = [
+        BronzeDataFrameRecord(id=100, name="NewRecord1", ncol="Value1"),
+        BronzeDataFrameRecord(id=101, name="NewRecord2", ncol="Value2")
+    ]
+
+    generator.add_records(new_records).write().read()
+
+    # Check that new records were added with ncol values
+    new_rows = generator.df.filter(F.col("id").isin([100, 101])).collect()
+    assert len(new_rows) == 2
+
+    for row in new_rows:
+        assert row["ncol"] is not None
+        assert row["ncol"].startswith("Value")
+
+
+def test_add_records_with_ncol_and_remove_ncol(spark_: SparkSession):
+    """Test adding records with ncol and then removing ncol column"""
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    generator.add_ncol_column().write().read()
+
+    new_records = [
+        BronzeDataFrameRecord(id=100, name="NewRecord1", ncol="Value1"),
+        BronzeDataFrameRecord(id=101, name="NewRecord2", ncol="Value2")
+    ]
+
+    generator.add_records(new_records).write().read()
+
+    new_rows = generator.df.filter(F.col("id").isin([100, 101])).collect()
+    assert len(new_rows) == 2
+
+    generator.remove_ncol_column().write().read()
+
+    # Check that ncol column was removed
+    assert "ncol" not in generator.df.columns
+
+    # Check that new records still exist without ncol
+    new_rows = generator.df.filter(F.col("id").isin([100, 101])).collect()
+    assert len(new_rows) == 2
+    for row in new_rows:
+        assert "ncol" not in row

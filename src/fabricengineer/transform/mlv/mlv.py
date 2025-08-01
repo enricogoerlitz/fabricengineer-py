@@ -163,7 +163,7 @@ class MaterializedLakeView:
         return self.spark.sql(create_mlv)
 
     def drop(self) -> str:
-        drop_mlv = f"DROP MATERIALIZED LAKE VIEW {self.table_path}"
+        drop_mlv = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.table_path}"
         print(drop_mlv)
 
         if self._is_testing_mock:

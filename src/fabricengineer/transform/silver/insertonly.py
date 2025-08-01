@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import Callable
 from uuid import uuid4
 from dataclasses import dataclass
@@ -57,7 +58,7 @@ class SilverIngestionInsertOnlyService:
     def init(
         self,
         *,
-        spark: SparkSession,
+        spark_: SparkSession,
         source_table: LakehouseTable,
         destination_table: LakehouseTable,
         nk_columns: list[str],
@@ -76,20 +77,22 @@ class SilverIngestionInsertOnlyService:
         pk_column_name: str = "PK",
         nk_column_name: str = "NK",
         nk_column_concate_str: str = "_",
-        row_hist_number: str = "ROW_HIST_NUMBER",
+        row_is_current_column: str = "ROW_IS_CURRENT",
+        row_hist_number_column: str = "ROW_HIST_NUMBER",
         row_update_dts_column: str = "ROW_UPDATE_DTS",
         row_delete_dts_column: str = "ROW_DELETE_DTS",
         ldts_column: str = "ROW_LOAD_DTS",
+
         is_testing_mock: bool = False
     ) -> None:
         self._mlv_code = None
-        self._current_timestamp = F.current_timestamp()
+        self._current_timestamp = datetime.now()  # F.current_timestamp()
 
         self._is_testing_mock = is_testing_mock
-        self._spark = spark
+        self._spark = spark_
         self._df_bronze = df_bronze
         self._historize = historize
-        self._create_hist_mlv = create_historized_mlv
+        self._is_create_hist_mlv = create_historized_mlv
         self._mlv_suffix = mlv_suffix
         self._is_delta_load = is_delta_load
         self._delta_load_use_broadcast = delta_load_use_broadcast
@@ -106,7 +109,8 @@ class SilverIngestionInsertOnlyService:
         self._pk_column_name = pk_column_name
         self._nk_column_name = nk_column_name
         self._nk_column_concate_str = nk_column_concate_str
-        self._row_hist_number = row_hist_number
+        self._row_hist_number_column = row_hist_number_column
+        self._row_is_current_column = row_is_current_column
         self._row_update_dts_column = row_update_dts_column
         self._row_delete_dts_column = row_delete_dts_column
         self._ldts_column = ldts_column
@@ -134,7 +138,7 @@ class SilverIngestionInsertOnlyService:
 
     @property
     def mlv_name(self) -> str:
-        return f"{self._dest_table.lakehouse}.{self._dest_table.table}{self._mlv_suffix}"
+        return f"{self._dest_table.lakehouse}.{self._dest_table.schema}.{self._dest_table.table}{self._mlv_suffix}"
 
     @property
     def mlv_code(self) -> str:
@@ -179,7 +183,7 @@ class SilverIngestionInsertOnlyService:
 
         self._validate_param_isinstance(self._spark, "spark", SparkSession)
         self._validate_param_isinstance(self._historize, "historize", bool)
-        self._validate_param_isinstance(self._create_hist_mlv, "create_historized_mlv", bool)
+        self._validate_param_isinstance(self._is_create_hist_mlv, "create_historized_mlv", bool)
         self._validate_param_isinstance(self._is_delta_load, "is_delta_load", bool)
         self._validate_param_isinstance(self._delta_load_use_broadcast, "delta_load_use_broadcast", bool)
         self._validate_param_isinstance(self._transformations, "transformations", dict)
@@ -306,17 +310,17 @@ class SilverIngestionInsertOnlyService:
         spark.sql.parquet.vorder.enabled: Setting "spark.sql.parquet.vorder.enabled" to "true" in PySpark config enables a feature called vectorized parquet decoding.
                                                   This optimizes the performance of reading Parquet files by leveraging vectorized instructions and processing multiple values at once, enhancing overall processing speed.
 
-        Setting "spark.sql.legacy.parquet.int96RebaseModeInRead" and "spark.sql.legacy.parquet.int96RebaseModeInWrite" to "CORRECTED" ensures that Int96 values (a specific timestamp representation used in Parquet files) are correctly rebased during both reading and writing operations.
+        Setting "spark.sql.parquet.int96RebaseModeInRead" and "spark.sql.legacy.parquet.int96RebaseModeInWrite" to "CORRECTED" ensures that Int96 values (a specific timestamp representation used in Parquet files) are correctly rebased during both reading and writing operations.
         This is crucial for maintaining consistency and accuracy, especially when dealing with timestamp data across different systems or time zones.
-        Similarly, configuring "spark.sql.legacy.parquet.datetimeRebaseModeInRead" and "spark.sql.legacy.parquet.datetimeRebaseModeInWrite" to "CORRECTED" ensures correct handling of datetime values during Parquet file operations.
+        Similarly, configuring "spark.sql.parquet.datetimeRebaseModeInRead" and "spark.sql.legacy.parquet.datetimeRebaseModeInWrite" to "CORRECTED" ensures correct handling of datetime values during Parquet file operations.
         By specifying this rebasing mode, potential discrepancies or errors related to datetime representations are mitigated, resulting in more reliable data processing and analysis workflows.
         """
         self._spark.conf.set("spark.sql.parquet.vorder.enabled", "true")
 
-        self._spark.conf.set("spark.sql.legacy.parquet.int96RebaseModeInRead", "CORRECTED")
-        self._spark.conf.set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED")
-        self._spark.conf.set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED")
-        self._spark.conf.set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+        self._spark.conf.set("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED")
+        self._spark.conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
+        self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED")
+        self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
 
     def ingest(self) -> DataFrame:
         # 1.
@@ -338,6 +342,7 @@ class SilverIngestionInsertOnlyService:
         if do_overwrite:
             df_inital_load = df_bronze.select(target_columns_ordered)
             self._write_df(df_inital_load, "overwrite")
+            self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
             return df_inital_load
 
         # 2.
@@ -354,17 +359,18 @@ class SilverIngestionInsertOnlyService:
         df_updated_records = self._filter_updated_records(df_joined, df_bronze, updated_filter_condition)
 
         # 4.
-        # TODO: es sollen ALLE Daten in einem WRITE geschrieben werden!!!
         df_data_to_insert = df_new_records.unionByName(df_updated_records).select(target_columns_ordered).dropDuplicates(["PK"])
 
         # 6.
         if self._is_delta_load:
             self._write_df(df_data_to_insert, "append")
+            self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
             return df_data_to_insert
 
         df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver).select(target_columns_ordered)
         df_data_to_insert = df_data_to_insert.unionByName(df_deleted_records)
         self._write_df(df_data_to_insert, "append")
+        self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
         return df_data_to_insert
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
@@ -484,13 +490,11 @@ class SilverIngestionInsertOnlyService:
 
         df = df.withColumn(self._nk_column_name, F.concat_ws(self._nk_column_concate_str, *self._nk_columns))
 
-        # NEW ----------------------------------------------------------------------------------------------------
         return_columns = df.columns
 
         window_spec = Window.partitionBy(self._nk_columns).orderBy(df[self._ldts_column].desc())
         df_with_rownum = df.withColumn("ROW_NUMBER", F.row_number().over(window_spec))
         df = df_with_rownum.filter(df_with_rownum["ROW_NUMBER"] == 1).select(return_columns)
-        # --------------------------------------------------------------------------------------------------------
 
         return df
 
@@ -531,15 +535,26 @@ class SilverIngestionInsertOnlyService:
 
         return transform_fn(df, self)
 
-    def _create_or_replace_historized_mlv(self, df_bronze: DataFrame, df_silver: DataFrame) -> None:
+    def _create_or_replace_historized_mlv(
+            self,
+            df_bronze: DataFrame,
+            df_silver: DataFrame,
+            target_columns_ordered: list[str]
+    ) -> None:
         if not self._is_schema_change(df_bronze, df_silver):
+            print("MLV: No schema change detected.")
             return
         self._drop_historized_mlv()
-        self._create_historized_mlv(df_silver)
+        self._create_historized_mlv(target_columns_ordered)
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:
+        print(f"MLV: CREATE MLV {self.mlv_name}")
+        if not self._is_create_hist_mlv or self._is_testing_mock:
+            return
+
         last_columns_ordered = [
-            self._row_hist_number,
+            self._row_is_current_column,
+            self._row_hist_number_column,
             self._row_update_dts_column,
             self._row_delete_dts_column,
             self._ldts_column
@@ -555,8 +570,9 @@ class SilverIngestionInsertOnlyService:
 
         final_ordered_columns_str = ",\n".join([f"`{column}`" for column in final_ordered_columns])
 
-        # TODO: Contraint: _row_hist_number = 1 nur je für ein NK möglich
-        # TODO: TESTEN!!!
+        assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
+               f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
+
         self._mlv_code = f"""
 CREATE MATERIALIZED LAKE VIEW {self.mlv_name}
 AS
@@ -564,19 +580,36 @@ WITH cte_mlv AS (
     SELECT
         {silver_columns_ordered_str}
         ,LEAD({self._ldts_column}) OVER (PARTITION BY {self._nk_column_name} ORDER BY {self._ldts_column} DESC) AS {self._row_update_dts_column}
-        ,ROW_NUMBER() OVER (PARTITION BY {self._nk_column_name} ORDER BY {self._ldts_column} DESC) AS {self._row_hist_number}
+        ,ROW_NUMBER() OVER (PARTITION BY {self._nk_column_name} ORDER BY {self._ldts_column} DESC) AS {self._row_hist_number_column}
     FROM {self._dest_table.table_path}
+), cte_mlv_final AS (
+    SELECT
+        *
+        ,IIF({self._row_hist_number_column} = 1 AND {self._row_delete_dts_column} IS NULL, 1, 0) AS {self._row_is_current_column}
 )
-SELECT {final_ordered_columns_str}
+SELECT
+    {final_ordered_columns_str}
 FROM cte_mlv
 """
         self._spark.sql(self._mlv_code)
 
     def _drop_historized_mlv(self) -> None:
-        pass
+        drop_mlv_sql = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.mlv_name}"
+        print(drop_mlv_sql)
+
+        if self._is_testing_mock:
+            return
+
+        self._spark.sql(drop_mlv_sql)
 
     def _refresh_historized_mlv(self) -> None:
-        pass
+        refresh_mlv_sql = f"REFRESH MATERIALIZED LAKE VIEW {self.mlv_name}"
+        print(refresh_mlv_sql)
+
+        if self._is_testing_mock:
+            return
+
+        self._spark.sql(refresh_mlv_sql)
 
     def _is_schema_change(self, df_bronze: DataFrame, df_silver: DataFrame) -> bool:
         """Check if the schema of the bronze DataFrame is different from the silver DataFrame.
@@ -588,6 +621,8 @@ FROM cte_mlv
         Returns:
             bool: True if the schema has changed, False otherwise.
         """
+        if df_silver is None:
+            return True
         return set(df_bronze.columns) != set(df_silver.columns)
 
     def _write_df(self, df: DataFrame, write_mode: str) -> None:

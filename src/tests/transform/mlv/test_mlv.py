@@ -32,7 +32,7 @@ def get_default_mlv_kwargs(
         notebookutils_: NotebookUtilsMock
 ) -> dict:
     """Get default keyword arguments for MaterializedLakeView."""
-    kwargs = {k: v for k, v in default_mlv_kwargs.items()}
+    kwargs = default_mlv_kwargs.copy()
     kwargs["spark_"] = spark_
     kwargs["notebookutils_"] = notebookutils_
     return kwargs
@@ -236,7 +236,7 @@ def test_create_or_replace(spark_: SparkSession, notebookutils_: NotebookUtilsMo
     # logs 3 - Replace MLV
     assert len(logs_3_replace) == 4
     assert "REPLACE MLV" in logs_3_replace[0]
-    assert "DROP MATERIALIZED LAKE VIEW" in logs_3_replace[1]
+    assert "DROP MATERIALIZED LAKE VIEW IF EXISTS" in logs_3_replace[1]
     assert "CREATE SCHEMA IF NOT EXISTS" in logs_3_replace[2]
     assert "CREATE MLV" in logs_3_replace[3]
 
@@ -247,7 +247,7 @@ def test_create_or_replace(spark_: SparkSession, notebookutils_: NotebookUtilsMo
     # logs 5 - File is not existing, but the MLV in Lakehouse is
     assert len(logs_5_warn_recreate) == 4
     assert "WARN: file=None, is_existing=True. RECREATE." in logs_5_warn_recreate[0]
-    assert "DROP MATERIALIZED LAKE VIEW" in logs_5_warn_recreate[1]
+    assert "DROP MATERIALIZED LAKE VIEW IF EXISTS" in logs_5_warn_recreate[1]
     assert "CREATE SCHEMA IF NOT EXISTS" in logs_5_warn_recreate[2]
     assert "CREATE MLV" in logs_5_warn_recreate[3]
 
