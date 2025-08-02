@@ -1,8 +1,9 @@
 import os
 
+from datetime import datetime
 from pyspark.sql import SparkSession, types as T, functions as F
 from fabricengineer.transform.lakehouse import LakehouseTable
-from fabricengineer.transform.silver.utils import get_mock_save_path
+from fabricengineer.transform.silver.utils import get_mock_table_path
 from tests.transform.silver.utils import BronzeDataFrameRecord, BronzeDataFrameDataGenerator
 
 
@@ -13,14 +14,24 @@ default_bronze_table = LakehouseTable(
 )
 
 
+def generate_init_data(count: int = 10) -> list[BronzeDataFrameRecord]:
+    """Generate a list of BronzeDataFrameRecord with sequential IDs and names."""
+    return [
+        BronzeDataFrameRecord(
+            id=i,
+            name=f"Name-{i}"
+        ) for i in range(1, count + 1)
+    ]
+
+
 def test_bronze_dataframe_record_default_values():
     """Test that BronzeDataFrameRecord creates with default values"""
     record = BronzeDataFrameRecord(id=1, name="test")
 
     assert record.id == 1
     assert record.name == "test"
-    assert record.created_at == "2023-01-01"
-    assert record.updated_at == "2023-01-01"
+    assert isinstance(record.created_at, datetime)
+    assert isinstance(record.updated_at, datetime)
 
 
 def test_bronze_dataframe_record_custom_values():
@@ -28,38 +39,44 @@ def test_bronze_dataframe_record_custom_values():
     record = BronzeDataFrameRecord(
         id=42,
         name="custom_name",
-        created_at="2024-01-01",
-        updated_at="2024-12-31"
+        created_at=datetime.strptime("2024-01-01", "%Y-%m-%d"),
+        updated_at=datetime.strptime("2024-12-31", "%Y-%m-%d")
     )
 
     assert record.id == 42
     assert record.name == "custom_name"
-    assert record.created_at == "2024-01-01"
-    assert record.updated_at == "2024-12-31"
+    assert record.created_at == datetime.strptime("2024-01-01", "%Y-%m-%d")
+    assert record.updated_at == datetime.strptime("2024-12-31", "%Y-%m-%d")
 
 
 def test_init_with_default_record_count(spark_: SparkSession):
     """Test initialization with default record count"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table)
+    count = 10
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
+
+    generator.write().read()
 
     assert generator.spark == spark_
     assert generator.table == default_bronze_table
-    assert generator.init_record_count == 10
+    assert generator.init_data == init_data
     assert generator.df is not None
     assert generator.df.count() == 10
 
-
-def test_init_with_custom_record_count(spark_: SparkSession):
-    """Test initialization with custom record count"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=5)
-
-    assert generator.init_record_count == 5
-    assert generator.df.count() == 5
+    for i, row in enumerate(generator.df.orderBy(F.col("id").asc()).collect()):
+        assert row["id"] == init_data[i].id
+        assert row["name"] == init_data[i].name
+        assert row["created_at"] == init_data[i].created_at
+        assert row["updated_at"] == init_data[i].updated_at
+        assert row["created_at"] is not None
+        assert row["updated_at"] is not None
 
 
 def test_generate_df_structure(spark_: SparkSession):
     """Test that generated DataFrame has correct structure"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=3)
+    count = 3
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     df = generator.df
 
     # Check schema
@@ -77,7 +94,10 @@ def test_generate_df_structure(spark_: SparkSession):
 
 def test_generate_df_content(spark_: SparkSession):
     """Test that generated DataFrame has correct content"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=3)
+    count = 3
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
+
     df = generator.df
 
     rows = df.collect()
@@ -93,17 +113,22 @@ def test_generate_df_content(spark_: SparkSession):
 
 def test_write_method(spark_: SparkSession):
     """Test write method functionality"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     result = generator.write()
 
     # Check that method returns  for chaining
     assert result == generator
-    assert os.path.exists(get_mock_save_path(default_bronze_table))
+    assert os.path.exists(get_mock_table_path(default_bronze_table))
 
 
 def test_read_method(spark_: SparkSession):
     """Test read method functionality"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
+
     result = generator.write()
 
     # Check that method returns  for chaining
@@ -117,7 +142,9 @@ def test_read_method(spark_: SparkSession):
 
 def test_add_records(spark_: SparkSession):
     """Test adding records to the generator"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     initial_count = generator.df.count()
 
     new_records = [
@@ -141,7 +168,9 @@ def test_add_records(spark_: SparkSession):
 
 def test_update_records(spark_: SparkSession):
     """Test updating records in the generator"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=3)
+    count = 5
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
 
     # Update record with id=2
     update_records = [
@@ -163,7 +192,9 @@ def test_update_records(spark_: SparkSession):
 
 def test_delete_records(spark_: SparkSession):
     """Test deleting records from the generator"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=5)
+    count = 5
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     initial_count = generator.df.count()
 
     # Delete records with ids 2 and 4
@@ -186,7 +217,9 @@ def test_delete_records(spark_: SparkSession):
 
 def test_empty_operations(spark_: SparkSession, ):
     """Test operations with empty lists"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     initial_count = generator.df.count()
 
     # Test empty operations
@@ -202,7 +235,9 @@ def test_empty_operations(spark_: SparkSession, ):
 
 def test_add_ncol_column(spark_: SparkSession):
     """Test adding ncol column to the DataFrame"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     generator.write().read()
 
     assert "ncol" not in generator.df.columns
@@ -218,7 +253,9 @@ def test_add_ncol_column(spark_: SparkSession):
 
 def test_remove_ncol_column(spark_: SparkSession):
     """Test removing ncol column from the DataFrame"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     generator.add_ncol_column().write().read()
 
     assert "ncol" in generator.df.columns
@@ -230,7 +267,9 @@ def test_remove_ncol_column(spark_: SparkSession):
 
 def test_add_records_with_ncol(spark_: SparkSession):
     """Test adding records with ncol column"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     generator.add_ncol_column().write().read()
 
     new_records = [
@@ -251,7 +290,9 @@ def test_add_records_with_ncol(spark_: SparkSession):
 
 def test_add_records_with_ncol_and_remove_ncol(spark_: SparkSession):
     """Test adding records with ncol and then removing ncol column"""
-    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_record_count=2)
+    count = 2
+    init_data = generate_init_data(count)
+    generator = BronzeDataFrameDataGenerator(spark_, default_bronze_table, init_data=init_data)
     generator.add_ncol_column().write().read()
 
     new_records = [

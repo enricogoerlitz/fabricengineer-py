@@ -1,16 +1,16 @@
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pyspark.sql import SparkSession, functions as F, types as T
 from fabricengineer.transform.lakehouse import LakehouseTable
-from fabricengineer.transform.silver.insertonly import get_mock_save_path
+from fabricengineer.transform.silver.insertonly import get_mock_table_path
 
 
 @dataclass
 class BronzeDataFrameRecord:
     id: int
     name: str
-    created_at: str = "2023-01-01"
-    updated_at: str = "2023-01-01"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
     ncol: str = None
 
 
@@ -19,26 +19,26 @@ class BronzeDataFrameDataGenerator:
         self,
         spark: SparkSession,
         table: LakehouseTable,
-        init_record_count: int = 10,
+        init_data: list[BronzeDataFrameRecord] = None,
         init_name_prefix: str = "Name-"
     ) -> None:
         self.spark = spark
         self.table = table
-        self.init_record_count = init_record_count
+        self.init_data = init_data or []
         self.init_name_prefix = init_name_prefix
-        self.df = self._generate_df()
+        self.df = self._generate_df(self.init_data)
 
-    def _generate_df(self):
+    def _generate_df(self, init_data: list[BronzeDataFrameRecord]):
         data = [
-            (i, f"{self.init_name_prefix}{i}", "2023-01-01", "2023-01-01")
-            for i in range(1, self.init_record_count + 1)
+            (record.id, record.name, record.created_at, record.updated_at)
+            for record in init_data
         ]
 
         schema = T.StructType([
             T.StructField("id", T.IntegerType(), False),
             T.StructField("name", T.StringType(), False),
-            T.StructField("created_at", T.StringType(), False),
-            T.StructField("updated_at", T.StringType(), False),
+            T.StructField("created_at", T.TimestampType(), False),
+            T.StructField("updated_at", T.TimestampType(), False),
         ])
 
         df_bronze = self.spark.createDataFrame(data, schema)
@@ -52,13 +52,13 @@ class BronzeDataFrameDataGenerator:
         self.df.write \
             .format("parquet") \
             .mode("overwrite") \
-            .save(get_mock_save_path(self.table))
+            .save(get_mock_table_path(self.table))
         return self
 
     def read(self) -> 'BronzeDataFrameDataGenerator':
         self.df = self.spark.read \
             .format("parquet") \
-            .load(get_mock_save_path(self.table)) \
+            .load(get_mock_table_path(self.table)) \
             .orderBy(F.col("id").asc(), F.col("created_at").asc())
         return self
 
@@ -74,12 +74,12 @@ class BronzeDataFrameDataGenerator:
     def add_records(self, records: list[BronzeDataFrameRecord]) -> 'BronzeDataFrameDataGenerator':
         if "ncol" in self.df.schema.fieldNames():
             new_data = [
-                (record.id, record.name, datetime.strptime(record.created_at, "%Y-%m-%d"), datetime.strptime(record.updated_at, "%Y-%m-%d"), record.ncol)
+                (record.id, record.name, record.created_at, record.updated_at, record.ncol)
                 for record in records
             ]
         else:
             new_data = [
-                (record.id, record.name, datetime.strptime(record.created_at, "%Y-%m-%d"), datetime.strptime(record.updated_at, "%Y-%m-%d"))
+                (record.id, record.name, record.created_at, record.updated_at)
                 for record in records
             ]
 
@@ -97,8 +97,16 @@ class BronzeDataFrameDataGenerator:
                 ) \
                 .withColumn(
                     "updated_at",
-                    F.when(F.col("id") == record.id, F.current_timestamp()).otherwise(F.col("updated_at"))
+                    F.when(F.col("id") == record.id, record.updated_at)
+                    .otherwise(F.col("updated_at"))
                 )
+            if "ncol" in self.df.schema.fieldNames():
+                self.df = self.df \
+                    .withColumn(
+                        "ncol",
+                        F.when(F.col("id") == record.id, record.ncol)
+                        .otherwise(F.col("ncol"))
+                    )
         return self
 
     def delete_records(self, ids: list[int]) -> 'BronzeDataFrameDataGenerator':

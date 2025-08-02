@@ -13,7 +13,7 @@ from fabricengineer.transform.silver.utils import (
     LakehouseTable,
     ConstantColumn,
     generate_uuid,
-    get_mock_save_path
+    get_mock_table_path
 )
 from fabricengineer.transform.silver.base import BaseSilverIngestionService
 
@@ -52,7 +52,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         is_testing_mock: bool = False
     ) -> None:
         self._mlv_code = None
-        self._current_timestamp = datetime.now()  # F.current_timestamp()
 
         self._is_testing_mock = is_testing_mock
         self._spark = spark_
@@ -289,6 +288,8 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
 
     def ingest(self) -> DataFrame:
+        self._current_timestamp = datetime.now()
+
         # 1.
         df_bronze, df_silver = self._generate_dataframes()
 
@@ -341,13 +342,13 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
     def read_silver_df(self) -> DataFrame:
         if self._is_testing_mock:
-            if not os.path.exists(get_mock_save_path(self._dest_table)):
+            if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
         elif not self._spark.catalog.tableExists(self._dest_table.table_path):
             return None
 
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_save_path(self._dest_table))
+        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
         return df
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
@@ -431,7 +432,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         elif not self._is_testing_mock:
             df = self._spark.sql(sql_select_source)
         else:
-            df = self._spark.read.format("parquet").load(get_mock_save_path(self._src_table))
+            df = self._spark.read.format("parquet").load(get_mock_table_path(self._src_table))
 
         self._validate_nk_columns_in_df(df)
 
@@ -448,13 +449,13 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
     def _create_silver_df(self) -> DataFrame:
         if self._is_testing_mock:
-            if not os.path.exists(get_mock_save_path(self._dest_table)):
+            if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
         elif not self._spark.catalog.tableExists(self._dest_table.table_path):
             return None
 
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_save_path(self._dest_table))
+        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
 
         self._validate_nk_columns_in_df(df)
 
@@ -609,7 +610,7 @@ FROM cte_mlv
                 .mode(write_mode) \
                 .option("mergeSchema", "true") \
                 .partitionBy(*self._partition_by) \
-                .save(get_mock_save_path(self._dest_table))
+                .save(get_mock_table_path(self._dest_table))
             return
 
         df.write \

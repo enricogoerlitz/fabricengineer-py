@@ -24,7 +24,7 @@ class ConstantColumn:
         object.__setattr__(self, "name", self.name.upper())
 
 
-def get_mock_save_path(table: LakehouseTable) -> str:
+def get_mock_table_path(table: LakehouseTable) -> str:
     if table is None:
         raise ValueError("Table is not initialized.")
     table_path = table.table_path.replace(".", "/")
