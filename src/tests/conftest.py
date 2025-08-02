@@ -1,10 +1,11 @@
 import pytest
+
 from pyspark.sql import SparkSession
 
 from tests.utils import NotebookUtilsMock
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def spark_():
     """Create a Spark session for testing."""
     spark = SparkSession.builder \

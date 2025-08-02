@@ -19,16 +19,18 @@ class BronzeDataFrameDataGenerator:
         self,
         spark: SparkSession,
         table: LakehouseTable,
-        init_record_count: int = 10
+        init_record_count: int = 10,
+        init_name_prefix: str = "Name-"
     ) -> None:
         self.spark = spark
         self.table = table
         self.init_record_count = init_record_count
+        self.init_name_prefix = init_name_prefix
         self.df = self._generate_df()
 
     def _generate_df(self):
         data = [
-            (i, f"Name-{i}", "2023-01-01", "2023-01-01")
+            (i, f"{self.init_name_prefix}{i}", "2023-01-01", "2023-01-01")
             for i in range(1, self.init_record_count + 1)
         ]
 

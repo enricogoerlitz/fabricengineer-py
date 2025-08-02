@@ -339,6 +339,17 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
         return df_data_to_insert
 
+    def read_silver_df(self) -> DataFrame:
+        if self._is_testing_mock:
+            if not os.path.exists(get_mock_save_path(self._dest_table)):
+                return None
+        elif not self._spark.catalog.tableExists(self._dest_table.table_path):
+            return None
+
+        sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
+        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_save_path(self._dest_table))
+        return df
+
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
         df_bronze = self._create_bronze_df()
         df_bronze = self._apply_transformations(df_bronze)
@@ -408,8 +419,8 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         df_deleted_records = df_joined.filter((df_bronze[self._nk_column_name].isNull()) & (df_silver[self._row_delete_dts_column].isNull())) \
                                       .select(df_silver["*"]) \
                                       .withColumn(self._pk_column_name, generate_uuid()) \
-                                      .withColumn(self._row_delete_dts_column, self._current_timestamp) \
-                                      .withColumn(self._ldts_column, self._current_timestamp)
+                                      .withColumn(self._row_delete_dts_column, F.lit(self._current_timestamp)) \
+                                      .withColumn(self._ldts_column, F.lit(self._current_timestamp))
 
         return df_deleted_records
 
