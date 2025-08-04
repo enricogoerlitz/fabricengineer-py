@@ -1,12 +1,11 @@
 import requests
 
-
 from typing import Literal
 
 
 def import_module(
         name: Literal[
-            "transform.mlv",
+            "transform.silver.mlv",
             "transform.silver.insertonly",
             "transform.silver.sdc2"
         ],
@@ -15,7 +14,7 @@ def import_module(
     base_path = f"https://raw.githubusercontent.com/enricogoerlitz/fabricengineer-py/refs/tags/{version}/src/fabricengineer"
 
     module_map = {
-        "transform.mlv": _import_module_mlv,
+        "transform.silver.mlv": _import_module_mlv,
         "transform.silver.insertonly": _import_module_insertonly,
         "transform.silver.sdc2": _import_module_sdc2
     }
@@ -23,10 +22,10 @@ def import_module(
     if name not in module_map:
         raise ValueError(f"Unknown module: {name}")
 
-    return module_map[name](base_path, version)
+    return module_map[name](base_path)
 
 
-def _import_module_insertonly(base_path: str, version: str) -> str:
+def _import_module_insertonly(base_path: str) -> str:
     lakehouse_module = _import_transform_lakehouse_module(base_path)
     base_module = _import_transform_silver_base_module(base_path)
     utils_module = _import_transform_silver_utils_module(base_path)
@@ -48,7 +47,8 @@ from pyspark.sql import (
     types as T,
     Window
 )
-"""
+""".strip()
+
     code = "\n\n\n".join([
         imports,
         lakehouse_module,
@@ -60,12 +60,29 @@ from pyspark.sql import (
     return code
 
 
-def _import_module_sdc2(version: str) -> str:
+def _import_module_sdc2(base_path: str) -> str:
     pass
 
 
-def _import_module_mlv(version: str) -> str:
-    pass
+def _import_module_mlv(base_path: str) -> str:
+    mlv_module = _import_transform_mlv_module(base_path)
+
+    imports = """
+from typing import Any
+from pyspark.sql import DataFrame, SparkSession
+""".strip()
+
+    code = "\n\n\n".join([
+        imports,
+        mlv_module
+    ])
+
+    return code
+
+
+def _import_transform_mlv_module(base_path: str) -> str:
+    mlv_module = f"{base_path}/transform/mlv/mlv.py"
+    return _fetch_module_content(mlv_module)
 
 
 def _import_transform_lakehouse_module(base_path: str) -> str:

@@ -2,6 +2,15 @@ from typing import Any
 from pyspark.sql import DataFrame, SparkSession
 
 
+# mlv.py
+
+
+def to_spark_sql(sql: str) -> str:
+    return sql \
+            .replace("[", "`") \
+            .replace("]", "`")
+
+
 class MaterializedLakeView:
     def __init__(
         self,

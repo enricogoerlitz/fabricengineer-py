@@ -588,7 +588,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
                f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
 
-        # TODO: wenn ConstantColumns mit part_of_nk, dann muss hier noch nach partitioniert werden!
         constant_column_str = ""
         for constant_column in self._constant_columns:
             if constant_column.part_of_nk:

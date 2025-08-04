@@ -1,4 +1,3 @@
-
 import os
 
 from datetime import datetime
@@ -14,6 +13,17 @@ from pyspark.sql import (
     types as T,
     Window
 )
+
+
+@dataclass
+class LakehouseTable:
+    lakehouse: str
+    schema: str
+    table: str
+
+    @property
+    def table_path(self) -> str:
+        return f"{self.lakehouse}.{self.schema}.{self.table}"
 
 
 @F.udf(returnType=T.StringType())
@@ -43,6 +53,7 @@ def get_mock_table_path(table: LakehouseTable) -> str:
     full_table_path = f"tmp/lakehouse/{table_path}"
     return full_table_path
 
+
 class BaseSilverIngestionService(ABC):
     @abstractmethod
     def init(self, **kwargs): pass
@@ -50,15 +61,6 @@ class BaseSilverIngestionService(ABC):
     @abstractmethod
     def ingest(self, **kwargs): pass
 
-@dataclass
-class LakehouseTable:
-    lakehouse: str
-    schema: str
-    table: str
-
-    @property
-    def table_path(self) -> str:
-        return f"{self.lakehouse}.{self.schema}.{self.table}"
 
 class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
     _is_initialized: bool = False
@@ -627,7 +629,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
                f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
 
-        # TODO: wenn ConstantColumns mit part_of_nk, dann muss hier noch nach partitioniert werden!
         constant_column_str = ""
         for constant_column in self._constant_columns:
             if constant_column.part_of_nk:
