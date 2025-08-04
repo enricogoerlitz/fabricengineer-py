@@ -49,11 +49,11 @@ from pyspark.sql import (
     Window
 )
 """
-    code = "\n\n".join([
+    code = "\n\n\n".join([
         imports,
+        lakehouse_module,
         utils_module,
         base_module,
-        lakehouse_module,
         insertonly_module
     ])
 
