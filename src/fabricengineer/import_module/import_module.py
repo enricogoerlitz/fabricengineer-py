@@ -50,10 +50,10 @@ from pyspark.sql import (
 )
 """
     code = "\n\n".join([
-        imports +
-        utils_module +
-        base_module +
-        lakehouse_module +
+        imports,
+        utils_module,
+        base_module,
+        lakehouse_module,
         insertonly_module
     ])
 
