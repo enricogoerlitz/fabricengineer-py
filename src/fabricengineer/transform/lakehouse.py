@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+# lakehouse.py
+
+
 @dataclass
 class LakehouseTable:
     lakehouse: str

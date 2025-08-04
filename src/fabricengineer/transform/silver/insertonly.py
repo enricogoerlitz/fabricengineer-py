@@ -10,12 +10,15 @@ from pyspark.sql import (
 )
 
 from fabricengineer.transform.silver.utils import (
-    LakehouseTable,
     ConstantColumn,
     generate_uuid,
     get_mock_table_path
 )
+from fabricengineer.transform.lakehouse import LakehouseTable
 from fabricengineer.transform.silver.base import BaseSilverIngestionService
+
+
+# insertonly.py
 
 
 class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
