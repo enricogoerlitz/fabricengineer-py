@@ -103,7 +103,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
     @property
     def mlv_name(self) -> str:
-        return f"{self._dest_table.lakehouse}.{self._dest_table.schema}.{self._dest_table.table}{self._mlv_suffix}"
+        return f"{self._dest_table.table_path}{self._mlv_suffix}"
 
     @property
     def mlv_code(self) -> str:
@@ -324,7 +324,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._current_timestamp = datetime.now()
 
         # 1.
-        df_bronze, df_silver = self._generate_dataframes()
+        df_bronze, df_silver, has_schema_changed = self._generate_dataframes()
 
         target_columns_ordered = self._get_columns_ordered(df_bronze)
 
@@ -342,7 +342,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         if do_overwrite:
             df_inital_load = df_bronze.select(target_columns_ordered)
             self._write_df(df_inital_load, "overwrite")
-            self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
+            self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
             return df_inital_load
 
         # 2.
@@ -364,13 +364,13 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         # 6.
         if self._is_delta_load:
             self._write_df(df_data_to_insert, "append")
-            self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
+            self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
             return df_data_to_insert
 
         df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver).select(target_columns_ordered)
         df_data_to_insert = df_data_to_insert.unionByName(df_deleted_records)
         self._write_df(df_data_to_insert, "append")
-        self._create_or_replace_historized_mlv(df_bronze, df_silver, target_columns_ordered)
+        self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
         return df_data_to_insert
 
     def read_silver_df(self) -> DataFrame:
@@ -384,14 +384,16 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
         return df
 
-    def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
+    def _generate_dataframes(self) -> tuple[DataFrame, DataFrame, bool]:
         df_bronze = self._create_bronze_df()
         df_bronze = self._apply_transformations(df_bronze)
 
         df_silver = self._create_silver_df()
 
+        has_schema_changed = self._has_schema_change(df_bronze, df_silver)
+
         if df_silver is None:
-            return df_bronze, df_silver
+            return df_bronze, df_silver, has_schema_changed
 
         df_bronze = self._add_missing_columns(df_bronze, df_silver)
         df_silver = self._add_missing_columns(df_silver, df_bronze)
@@ -399,7 +401,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         if self._is_delta_load and self._delta_load_use_broadcast:
             df_bronze = F.broadcast(df_bronze)
 
-        return df_bronze, df_silver
+        return df_bronze, df_silver, has_schema_changed
 
     def _get_compare_condition(self, df_bronze: DataFrame, df_silver: DataFrame, columns_to_compare: list[str]):
         eq_condition = (
@@ -535,7 +537,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         ]
 
     def _apply_transformations(self, df: DataFrame) -> DataFrame:
-        transform_fn: Callable = self._transformations.get(self._src_table.table_path)
+        transform_fn: Callable = self._transformations.get(self._src_table.table)
         transform_fn_all: Callable = self._transformations.get("*")
 
         if transform_fn_all is not None:
@@ -548,11 +550,10 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
     def _create_or_replace_historized_mlv(
             self,
-            df_bronze: DataFrame,
-            df_silver: DataFrame,
+            has_schema_changed: bool,
             target_columns_ordered: list[str]
     ) -> None:
-        if not self._is_schema_change(df_bronze, df_silver):
+        if not has_schema_changed:
             print("MLV: No schema change detected.")
             return
         self._drop_historized_mlv()
@@ -560,7 +561,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:
         print(f"MLV: CREATE MLV {self.mlv_name}")
-        if not self._is_create_hist_mlv or self._is_testing_mock:
+        if not self._is_create_hist_mlv:
             return
 
         last_columns_ordered = [
@@ -606,9 +607,12 @@ WITH cte_mlv AS (
         ,IIF({self._row_hist_number_column} = 1 AND {self._row_delete_dts_column} IS NULL, 1, 0) AS {self._row_is_current_column}
 )
 SELECT
-    {final_ordered_columns_str}
+{final_ordered_columns_str}
 FROM cte_mlv
 """
+        if self._is_testing_mock:
+            return
+
         self._spark.sql(self._mlv_code)
 
     def _drop_historized_mlv(self) -> None:
@@ -629,7 +633,7 @@ FROM cte_mlv
 
         self._spark.sql(refresh_mlv_sql)
 
-    def _is_schema_change(self, df_bronze: DataFrame, df_silver: DataFrame) -> bool:
+    def _has_schema_change(self, df_bronze: DataFrame, df_silver: DataFrame) -> bool:
         """Check if the schema of the bronze DataFrame is different from the silver DataFrame.
 
         Args:
