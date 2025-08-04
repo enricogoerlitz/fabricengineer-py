@@ -47,7 +47,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         row_hist_number_column: str = "ROW_HIST_NUMBER",
         row_update_dts_column: str = "ROW_UPDATE_DTS",
         row_delete_dts_column: str = "ROW_DELETE_DTS",
-        ldts_column: str = "ROW_LOAD_DTS",
+        row_load_dts_column: str = "ROW_LOAD_DTS",
 
         is_testing_mock: bool = False
     ) -> None:
@@ -66,10 +66,10 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._nk_columns = nk_columns
         self._include_comparing_columns = include_comparing_columns
 
-        self._exclude_comparing_columns = exclude_comparing_columns if isinstance(exclude_comparing_columns, list) else []
-        self._transformations: dict[str, Callable] = transformations if isinstance(transformations, dict) else {}
-        self._constant_columns: list[ConstantColumn] = constant_columns if isinstance(constant_columns, list) else []
-        self._partition_by: list[str] = partition_by_columns if isinstance(partition_by_columns, list) else []
+        self._exclude_comparing_columns = exclude_comparing_columns or []
+        self._transformations: dict[str, Callable] = transformations or {}
+        self._constant_columns: list[ConstantColumn] = constant_columns or []
+        self._partition_by: list[str] = partition_by_columns or []
 
         self._pk_column_name = pk_column_name
         self._nk_column_name = nk_column_name
@@ -78,7 +78,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._row_is_current_column = row_is_current_column
         self._row_update_dts_column = row_update_dts_column
         self._row_delete_dts_column = row_delete_dts_column
-        self._ldts_column = ldts_column
+        self._row_load_dts_column = row_load_dts_column
 
         self._validate_parameters()
         self._set_spark_config()
@@ -87,7 +87,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             self._pk_column_name,
             self._nk_column_name,
             self._row_delete_dts_column,
-            self._ldts_column
+            self._row_load_dts_column
         ]
 
         self._exclude_comparing_columns = set(
@@ -130,7 +130,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             "nk_column_concate_str": self._nk_column_concate_str,
             "row_update_dts_column": self._row_update_dts_column,
             "row_delete_dts_column": self._row_delete_dts_column,
-            "ldts_column": self._ldts_column,
+            "ldts_column": self._row_load_dts_column,
             "dw_columns": self._dw_columns
         })
 
@@ -152,18 +152,48 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._validate_param_isinstance(self._is_delta_load, "is_delta_load", bool)
         self._validate_param_isinstance(self._delta_load_use_broadcast, "delta_load_use_broadcast", bool)
         self._validate_param_isinstance(self._transformations, "transformations", dict)
-        self._validate_min_length(self._pk_column_name, "pk_column", 2)
-        self._validate_min_length(self._mlv_suffix, "mlv_suffix", 1)
-        self._validate_min_length(self._src_table.table, "src_tablename", 3)
-        self._validate_min_length(self._dest_table.table, "dist_tablename", 3)
-        self._validate_min_length(self._nk_columns, "nk_columns", 1)
-        self._validate_min_length(self._nk_column_name, "nk_column", 2)
-        self._validate_min_length(self._nk_column_concate_str, "nk_column_concate_str", 1)
+        self._validate_param_isinstance(self._src_table, "src_table", LakehouseTable)
+        self._validate_param_isinstance(self._dest_table, "dest_table", LakehouseTable)
+        self._validate_param_isinstance(self._include_comparing_columns, "include_columns_from_comparing", list)
         self._validate_param_isinstance(self._exclude_comparing_columns, "exclude_columns_from_comparing", list)
-
-        self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_columnname", 3)
-        self._validate_min_length(self._ldts_column, "ldts_column", 3)
+        self._validate_param_isinstance(self._partition_by, "partition_by_columns", list)
+        self._validate_param_isinstance(self._pk_column_name, "pk_column", str)
+        self._validate_param_isinstance(self._nk_column_name, "nk_column", str)
+        self._validate_param_isinstance(self._nk_columns, "nk_columns", list)
+        self._validate_param_isinstance(self._nk_column_concate_str, "nk_column_concate_str", str)
+        self._validate_param_isinstance(self._mlv_suffix, "mlv_suffix", str)
         self._validate_param_isinstance(self._constant_columns, "constant_columns", list)
+        self._validate_param_isinstance(self._row_load_dts_column, "row_load_dts_column", str)
+        self._validate_param_isinstance(self._row_hist_number_column, "row_hist_number_column", str)
+        self._validate_param_isinstance(self._row_is_current_column, "row_is_current_column", str)
+        self._validate_param_isinstance(self._row_update_dts_column, "row_update_dts_column", str)
+        self._validate_param_isinstance(self._row_delete_dts_column, "row_delete_dts_column", str)
+
+        self._validate_min_length(self._pk_column_name, "pk_column", 2)
+        self._validate_min_length(self._nk_column_name, "nk_column", 2)
+        self._validate_min_length(self._src_table.lakehouse, "src_lakehouse", 3)
+        self._validate_min_length(self._src_table.schema, "src_schema", 1)
+        self._validate_min_length(self._src_table.table, "src_tablename", 3)
+        self._validate_min_length(self._dest_table.lakehouse, "dest_lakehouse", 3)
+        self._validate_min_length(self._dest_table.schema, "dest_schema", 1)
+        self._validate_min_length(self._dest_table.table, "dest_tablename", 3)
+        self._validate_min_length(self._nk_columns, "nk_columns", 1)
+        self._validate_min_length(self._nk_column_concate_str, "nk_column_concate_str", 1)
+        self._validate_min_length(self._mlv_suffix, "mlv_suffix", 1)
+        self._validate_min_length(self._row_load_dts_column, "row_load_dts_column", 3)
+        self._validate_min_length(self._row_hist_number_column, "row_hist_number_column", 3)
+        self._validate_min_length(self._row_is_current_column, "row_is_current_column", 3)
+        self._validate_min_length(self._row_update_dts_column, "row_update_dts_column", 3)
+        self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_column", 3)
+
+        for key, fn in self._transformations.items():
+            print("Transformation function:", fn)
+            if not callable(fn):
+                err_msg = f"The transformation function for key '{key}' is not callable."
+                raise TypeError(err_msg)
+
+        for constant_column in self._constant_columns:
+            self._validate_param_isinstance(constant_column, "constant_column", ConstantColumn)
 
     def _validate_param_isinstance(self, param, param_name: str, obj_class) -> None:
         """Validates a parameter to be the expected class instance
@@ -288,6 +318,9 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
 
     def ingest(self) -> DataFrame:
+        if not self._is_initialized:
+            raise RuntimeError("The SilverIngestionInsertOnlyService is not initialized. Call the init method first.")
+
         self._current_timestamp = datetime.now()
 
         # 1.
@@ -348,7 +381,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             return None
 
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
+        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
         return df
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
@@ -421,7 +454,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
                                       .select(df_silver["*"]) \
                                       .withColumn(self._pk_column_name, generate_uuid()) \
                                       .withColumn(self._row_delete_dts_column, F.lit(self._current_timestamp)) \
-                                      .withColumn(self._ldts_column, F.lit(self._current_timestamp))
+                                      .withColumn(self._row_load_dts_column, F.lit(self._current_timestamp))
 
         return df_deleted_records
 
@@ -443,7 +476,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         df = df.withColumn(self._pk_column_name, generate_uuid())  \
                .withColumn(self._nk_column_name, F.concat_ws(self._nk_column_concate_str, *self._nk_columns)) \
                .withColumn(self._row_delete_dts_column, F.lit(None).cast("timestamp")) \
-               .withColumn(self._ldts_column, F.lit(self._current_timestamp))
+               .withColumn(self._row_load_dts_column, F.lit(self._current_timestamp))
 
         return df
 
@@ -470,7 +503,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return_columns = df.columns
 
-        window_spec = Window.partitionBy(self._nk_columns).orderBy(df[self._ldts_column].desc())
+        window_spec = Window.partitionBy(self._nk_columns).orderBy(df[self._row_load_dts_column].desc())
         df_with_rownum = df.withColumn("ROW_NUMBER", F.row_number().over(window_spec))
         df = df_with_rownum.filter(df_with_rownum["ROW_NUMBER"] == 1).select(return_columns)
 
@@ -497,7 +530,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         all_columns = [column for column in df.columns if column not in self._dw_columns]
 
         return [self._pk_column_name, self._nk_column_name] + all_columns + [
-            self._ldts_column,
+            self._row_load_dts_column,
             self._row_delete_dts_column
         ]
 
@@ -535,7 +568,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             self._row_hist_number_column,
             self._row_update_dts_column,
             self._row_delete_dts_column,
-            self._ldts_column
+            self._row_load_dts_column
         ]
 
         silver_columns_ordered_str = ",\n".join([f"`{column}`" for column in target_columns_ordered])
@@ -551,14 +584,21 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
                f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
 
+        # TODO: wenn ConstantColumns mit part_of_nk, dann muss hier noch nach partitioniert werden!
+        constant_column_str = ""
+        for constant_column in self._constant_columns:
+            if constant_column.part_of_nk:
+                constant_column_str = f", `{constant_column.name}`"
+                break
+
         self._mlv_code = f"""
 CREATE MATERIALIZED LAKE VIEW {self.mlv_name}
 AS
 WITH cte_mlv AS (
     SELECT
         {silver_columns_ordered_str}
-        ,LEAD({self._ldts_column}) OVER (PARTITION BY {self._nk_column_name} ORDER BY {self._ldts_column} DESC) AS {self._row_update_dts_column}
-        ,ROW_NUMBER() OVER (PARTITION BY {self._nk_column_name} ORDER BY {self._ldts_column} DESC) AS {self._row_hist_number_column}
+        ,LEAD({self._row_load_dts_column}) OVER (PARTITION BY {self._nk_column_name} {constant_column_str} ORDER BY {self._row_load_dts_column} DESC) AS {self._row_update_dts_column}
+        ,ROW_NUMBER() OVER (PARTITION BY {self._nk_column_name} {constant_column_str} ORDER BY {self._row_load_dts_column} DESC) AS {self._row_hist_number_column}
     FROM {self._dest_table.table_path}
 ), cte_mlv_final AS (
     SELECT
@@ -604,21 +644,17 @@ FROM cte_mlv
         return set(df_bronze.columns) != set(df_silver.columns)
 
     def _write_df(self, df: DataFrame, write_mode: str) -> None:
-        if self._is_testing_mock:
-            df.write \
-                .format("parquet") \
-                .mode(write_mode) \
-                .option("mergeSchema", "true") \
-                .partitionBy(*self._partition_by) \
-                .save(get_mock_table_path(self._dest_table))
-            return
-
-        df.write \
+        writer = df.write \
             .format("delta") \
             .mode(write_mode) \
             .option("mergeSchema", "true") \
-            .partitionBy(*self._partition_by) \
-            .saveAsTable(self._dest_table.table_path)
+            .partitionBy(*self._partition_by)
+
+        if self._is_testing_mock:
+            writer.save(get_mock_table_path(self._dest_table))
+            return
+
+        writer.saveAsTable(self._dest_table.table_path)
 
 
 etl = SilverIngestionInsertOnlyService()

@@ -12,18 +12,45 @@ wheels = [
 ]
 
 [[package]]
+name = "delta-spark"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-metadata" },
+    { name = "pyspark" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/06/a64cc4e17fe959cf60dc126bf3283fc9f22fc91f000b7f3f5e465338022d/delta-spark-3.2.0.tar.gz", hash = "sha256:641967828e47c64805f8c746513da80bea24b5f19b069cdcf64561cd3692e11d", size = 22147, upload-time = "2024-05-09T17:26:10.754Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/8e/bb778f5049aa371bf80a7a781b237eb10ef104f8736fe00d25fcfee80c2b/delta_spark-3.2.0-py3-none-any.whl", hash = "sha256:c4ff3fa7218e58a702cb71eb64384b0005c4d6f0bbdd0fe0b38a53564d946e09", size = 21186, upload-time = "2024-05-09T17:26:09.544Z" },
+]
+
+[[package]]
 name = "fabricengineer-py"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "delta-spark" },
     { name = "pyspark" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "delta-spark", specifier = ">=3.2.0" },
     { name = "pyspark", specifier = "==3.5.0" },
     { name = "pytest", specifier = ">=8.4.1" },
+]
+
+[[package]]
+name = "importlib-metadata"
+version = "8.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "zipp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/66/650a33bd90f786193e4de4b3ad86ea60b53c89b669a5c7be931fac31cdb0/importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000", size = 56641, upload-time = "2025-04-27T15:29:01.736Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/b0/36bd937216ec521246249be3bf9855081de4c5e06a0c9b4219dbeda50373/importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd", size = 27656, upload-time = "2025-04-27T15:29:00.214Z" },
 ]
 
 [[package]]
@@ -94,4 +121,13 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/ba/45911d754e8eba3d5a841a5ce61a65a685ff1798421ac054f85aa8747dfb/pytest-8.4.1.tar.gz", hash = "sha256:7c67fd69174877359ed9371ec3af8a3d2b04741818c51e5e99cc1742251fa93c", size = 1517714, upload-time = "2025-06-18T05:48:06.109Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl", hash = "sha256:539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7", size = 365474, upload-time = "2025-06-18T05:48:03.955Z" },
+]
+
+[[package]]
+name = "zipp"
+version = "3.23.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/02/0f2892c661036d50ede074e376733dca2ae7c6eb617489437771209d4180/zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166", size = 25547, upload-time = "2025-06-08T17:06:39.4Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e", size = 10276, upload-time = "2025-06-08T17:06:38.034Z" },
 ]

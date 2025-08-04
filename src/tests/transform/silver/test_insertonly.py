@@ -2,7 +2,11 @@ import pytest
 
 from datetime import datetime
 from uuid import uuid4
-from pyspark.sql import SparkSession, functions as F
+from pyspark.sql import (
+    SparkSession,
+    DataFrame,
+    functions as F
+)
 
 from tests.transform.silver.utils import BronzeDataFrameRecord, BronzeDataFrameDataGenerator
 from fabricengineer.transform.silver.utils import ConstantColumn
@@ -13,6 +17,8 @@ from fabricengineer.transform.lakehouse import LakehouseTable
 
 
 # pytest src/tests/transform/silver -v
+
+NCOL = "ncol"
 
 
 default_etl_kwargs = {
@@ -86,7 +92,7 @@ def test_init_etl(spark_: SparkSession):
     assert etl._dw_columns[0] == etl._pk_column_name
     assert etl._dw_columns[1] == etl._nk_column_name
     assert etl._dw_columns[2] == etl._row_delete_dts_column
-    assert etl._dw_columns[3] == etl._ldts_column
+    assert etl._dw_columns[3] == etl._row_load_dts_column
 
 
 def test_init_etl_fail_params(spark_: SparkSession):
@@ -94,17 +100,217 @@ def test_init_etl_fail_params(spark_: SparkSession):
     etl = SilverIngestionInsertOnlyService()
 
     # df_bronze should be DataFrame
-    with pytest.raises(TypeError, match="should be type of"):
+    with pytest.raises(TypeError, match=f"should be type of {DataFrame.__name__}"):
         kwargs = etl_kwargs.copy() | {"df_bronze": "str"}
         etl.init(**kwargs)
 
     # spark_ should be SparkSession
-    with pytest.raises(TypeError, match="should be type of"):
+    with pytest.raises(TypeError, match=f"should be type of {SparkSession.__name__}"):
         kwargs = etl_kwargs.copy() | {"spark_": "str"}
         etl.init(**kwargs)
 
-    # TODO: weitere Parameter prüfen
-    # mit kommentar beschreiben und dann generieren lassen <3
+    # historize should be bool
+    with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
+        kwargs = etl_kwargs.copy() | {"historize": "str"}
+        etl.init(**kwargs)
+
+    # create_historized_mlv should be bool
+    with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
+        kwargs = etl_kwargs.copy() | {"create_historized_mlv": "str"}
+        etl.init(**kwargs)
+
+    # is_delta_load should be bool
+    with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
+        kwargs = etl_kwargs.copy() | {"is_delta_load": "str"}
+        etl.init(**kwargs)
+
+    # delta_load_use_broadcast should be bool
+    with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
+        kwargs = etl_kwargs.copy() | {"delta_load_use_broadcast": "str"}
+        etl.init(**kwargs)
+
+    # transformations should be dict
+    with pytest.raises(TypeError, match=f"should be type of {dict.__name__}"):
+        kwargs = etl_kwargs.copy() | {"transformations": "str"}
+        etl.init(**kwargs)
+
+    # source_table should be LakehouseTable
+    with pytest.raises(TypeError, match=f"should be type of {LakehouseTable.__name__}"):
+        kwargs = etl_kwargs.copy() | {"source_table": "str"}
+        etl.init(**kwargs)
+
+    # destination_table should be LakehouseTable
+    with pytest.raises(TypeError, match=f"should be type of {LakehouseTable.__name__}"):
+        kwargs = etl_kwargs.copy() | {"destination_table": "str"}
+        etl.init(**kwargs)
+
+    # include_comparing_columns should be list
+    with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
+        kwargs = etl_kwargs.copy() | {"include_comparing_columns": "str"}
+        etl.init(**kwargs)
+
+    # exclude_comparing_columns should be list
+    with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
+        kwargs = etl_kwargs.copy() | {"exclude_comparing_columns": "str"}
+        etl.init(**kwargs)
+
+    # partition_by_columns should be list
+    with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
+        kwargs = etl_kwargs.copy() | {"partition_by_columns": "str"}
+        etl.init(**kwargs)
+
+    # pk_column_name should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"pk_column_name": 123}
+        etl.init(**kwargs)
+
+    # nk_column_name should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"nk_column_name": 123}
+        etl.init(**kwargs)
+
+    # nk_columns should be list
+    with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
+        kwargs = etl_kwargs.copy() | {"nk_columns": "str"}
+        etl.init(**kwargs)
+
+    # nk_column_concate_str should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"nk_column_concate_str": 123}
+        etl.init(**kwargs)
+
+    # mlv_suffix should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"mlv_suffix": 123}
+        etl.init(**kwargs)
+
+    # constant_columns should be list
+    with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
+        kwargs = etl_kwargs.copy() | {"constant_columns": "str"}
+        etl.init(**kwargs)
+
+    # row_load_dts_column should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"row_load_dts_column": 123}
+        etl.init(**kwargs)
+
+    # row_hist_number_column should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"row_hist_number_column": 123}
+        etl.init(**kwargs)
+
+    # row_is_current_column should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"row_is_current_column": 123}
+        etl.init(**kwargs)
+
+    # row_update_dts_column should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"row_update_dts_column": 123}
+        etl.init(**kwargs)
+
+    # row_delete_dts_column should be str
+    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
+        kwargs = etl_kwargs.copy() | {"row_delete_dts_column": 123}
+        etl.init(**kwargs)
+
+    # pk_column_name should be min length 2
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"pk_column_name": "a"}
+        etl.init(**kwargs)
+
+    # nk_column_name should be min length 2
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"nk_column_name": "a"}
+        etl.init(**kwargs)
+
+    # source_table.lakehouse should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="ab", schema="default_schema", table="test_table")
+        kwargs = etl_kwargs.copy() | {"source_table": table}
+        etl.init(**kwargs)
+
+    # source_table.table should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="BronzeLakehouse", schema="default_schema", table="ab")
+        kwargs = etl_kwargs.copy() | {"source_table": table}
+        etl.init(**kwargs)
+
+    # source_table.schema should be min length 1
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="BronzeLakehouse", schema="", table="test_table")
+        kwargs = etl_kwargs.copy() | {"source_table": table}
+        etl.init(**kwargs)
+
+    # destination_table.lakehouse should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="ab", schema="default_schema", table="test_table")
+        kwargs = etl_kwargs.copy() | {"destination_table": table}
+        etl.init(**kwargs)
+
+    # destination_table.schema should be min length 1
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="SilverLakehouse", schema="", table="test_table")
+        kwargs = etl_kwargs.copy() | {"destination_table": table}
+        etl.init(**kwargs)
+
+    # destination_table.table should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        table = LakehouseTable(lakehouse="SilverLakehouse", schema="default_schema", table="ab")
+        kwargs = etl_kwargs.copy() | {"destination_table": table}
+        etl.init(**kwargs)
+
+    # nk_columns should be min length 1
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"nk_columns": []}
+        etl.init(**kwargs)
+
+    # nk_column_concate_str should be min length 1
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"nk_column_concate_str": ""}
+        etl.init(**kwargs)
+
+    # mlv_suffix should be min length 1
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"mlv_suffix": ""}
+        etl.init(**kwargs)
+
+    # row_load_dts_column should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"row_load_dts_column": "ab"}
+        etl.init(**kwargs)
+
+    # row_hist_number_column should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"row_hist_number_column": "ab"}
+        etl.init(**kwargs)
+
+    # row_is_current_column should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"row_is_current_column": "ab"}
+        etl.init(**kwargs)
+
+    # row_update_dts_column should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"row_update_dts_column": "ab"}
+        etl.init(**kwargs)
+
+    # row_delete_dts_column should be min length 3
+    with pytest.raises(ValueError, match="Param length to short."):
+        kwargs = etl_kwargs.copy() | {"row_delete_dts_column": "ab"}
+        etl.init(**kwargs)
+
+    # transformations should be callable
+    with pytest.raises(TypeError, match="is not callable"):
+        kwargs = etl_kwargs.copy() | {"transformations": {
+            "test_transformation": "not_callable"
+        }}
+        etl.init(**kwargs)
+
+    # constant_columns should be list of ConstantColumn
+    with pytest.raises(TypeError, match=f"should be type of {ConstantColumn.__name__}"):
+        kwargs = etl_kwargs.copy() | {"constant_columns": ["not_a_constant_column"]}
+        etl.init(**kwargs)
 
 
 def test_ingest(spark_: SparkSession):
@@ -212,7 +418,7 @@ def test_ingest(spark_: SparkSession):
 
     current_expected_data = sorted(
         current_expected_data,
-        key=lambda r: (r.id, r.updated_at)
+        key=lambda r: (r.id, r.created_at)
     )
 
     assert bronze.df.count() == init_count + len(new_data) - len(deleted_data_ids)
@@ -240,3 +446,165 @@ def test_ingest(spark_: SparkSession):
             assert row["ROW_DELETE_DTS"] is None
 
     assert deleted_count == len(deleted_data_ids)
+
+
+def test_ingest_new_added_column(spark_: SparkSession):
+    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
+    etl = SilverIngestionInsertOnlyService()
+    etl.init(**etl_kwargs)
+
+    init_data = [
+        BronzeDataFrameRecord(id=1, name="Name-1"),
+        BronzeDataFrameRecord(id=2, name="Name-2")
+    ]
+    expected_data = [r for r in init_data]
+
+    bronze = BronzeDataFrameDataGenerator(
+        spark=spark_,
+        table=etl_kwargs["source_table"],
+        init_data=init_data
+    )
+
+    bronze.write().read()
+
+    inserted_df_1 = etl.ingest()
+    silver_df = etl.read_silver_df()
+
+    assert bronze.df.count() == len(init_data)
+    assert inserted_df_1 is not None
+    assert inserted_df_1.count() == len(init_data)
+    assert silver_df.count() == len(init_data)
+    assert NCOL not in bronze.df.columns
+    assert NCOL not in inserted_df_1.columns
+    assert NCOL not in silver_df.columns
+
+    # 1. Add new column
+    new_data = [
+        BronzeDataFrameRecord(id=11, name="Name-11", ncol="Value-11"),
+        BronzeDataFrameRecord(id=12, name="Name-12", ncol="Value-12")
+    ]
+    updated_data = [
+        BronzeDataFrameRecord(id=1, name="Name-1", ncol="Value-1")
+    ]
+    expected_data += new_data
+    expected_data += updated_data
+    bronze.add_ncol_column() \
+          .add_records(new_data) \
+          .write() \
+          .read()
+
+    expected_data = sorted(
+        expected_data,
+        key=lambda r: (r.id, r.created_at)
+    )
+
+    inserted_df_2 = etl.ingest()
+    silver_df_2 = etl.read_silver_df()
+
+    assert bronze.df.count() == 4
+    assert inserted_df_2 is not None
+    assert inserted_df_2.count() == 2
+    assert silver_df_2.count() == 4
+    assert NCOL in bronze.df.columns
+    assert NCOL in inserted_df_2.columns
+    assert NCOL in silver_df_2.columns
+
+    for i, row in enumerate(inserted_df_2.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
+        assert row["name"] == new_data[i].name
+        assert row["ncol"] == new_data[i].ncol
+
+
+def test_ingest_remove_column(spark_: SparkSession):
+    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
+    etl = SilverIngestionInsertOnlyService()
+    etl.init(**etl_kwargs)
+
+    init_data = [
+        BronzeDataFrameRecord(id=1, name="Name-1", ncol="Value-1"),
+        BronzeDataFrameRecord(id=2, name="Name-2", ncol="Value-2")
+    ]
+    expected_data = [r for r in init_data]
+
+    bronze = BronzeDataFrameDataGenerator(
+        spark=spark_,
+        table=etl_kwargs["source_table"],
+        init_data=[]
+    )
+    bronze.add_ncol_column() \
+          .add_records(init_data) \
+          .write() \
+          .read()
+
+    inserted_df_1 = etl.ingest()
+    silver_df = etl.read_silver_df()
+
+    assert bronze.df.count() == len(init_data)
+    assert inserted_df_1 is not None
+    assert inserted_df_1.count() == len(init_data)
+    assert silver_df.count() == len(init_data)
+    assert NCOL in bronze.df.columns
+    assert NCOL in inserted_df_1.columns
+    assert NCOL in silver_df.columns
+
+    for i, row in enumerate(inserted_df_1.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
+        assert row["id"] == init_data[i].id
+        assert row["name"] == init_data[i].name
+        assert row["ncol"] == init_data[i].ncol
+        assert row["ncol"] is not None
+
+    # 1. Remove column
+    bronze.remove_ncol_column()
+    new_data = [
+        BronzeDataFrameRecord(id=11, name="Name-11"),
+        BronzeDataFrameRecord(id=12, name="Name-12")
+    ]
+    expected_data += new_data
+
+    updated_data = [
+        BronzeDataFrameRecord(id=1, name="Name-Updated")
+    ]
+    expected_data += updated_data
+
+    bronze.add_records(new_data) \
+          .update_records(updated_data) \
+          .write() \
+          .read()
+
+    inserted_df_2 = etl.ingest()
+    silver_df_2 = etl.read_silver_df()
+
+    expected_data = sorted(
+        expected_data,
+        key=lambda r: (r.id, r.created_at)
+    )
+
+    assert bronze.df.count() == len(init_data) + len(new_data)
+    assert inserted_df_2 is not None
+    assert inserted_df_2.count() == len(new_data) + len(updated_data)
+    assert silver_df_2.count() == len(expected_data)
+    assert NCOL not in bronze.df.columns
+    assert NCOL in inserted_df_2.columns
+    assert NCOL in silver_df_2.columns
+
+    for i, row in enumerate(silver_df_2.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
+        assert row["id"] == expected_data[i].id
+        assert row["name"] == expected_data[i].name
+        assert row["ncol"] == expected_data[i].ncol
+
+# test transformations
+
+# test delta-load scenarios
+
+# test include columns comparing
+
+# test exclude columns comparing
+
+# test historized = false
+
+# test multiple ids
+
+# test pass in custom df_bronze
+
+# test partition by
+
+# constant_columns test
