@@ -46,7 +46,7 @@ def mount_py_file(file_path: str) -> None:
 def capture_logs(logger: logging.Logger):
     log_stream = io.StringIO()
     handler = logging.StreamHandler(log_stream)
-    handler.setLevel(logging.DEBUG)  # Fang alles ab
+    handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(filename)s %(message)s", "%d.%m.%Y %H:%M:%S,%f")
     handler.setFormatter(formatter)
 
