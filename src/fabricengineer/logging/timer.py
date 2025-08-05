@@ -4,6 +4,9 @@ from datetime import datetime
 from fabricengineer.logging.logger import logger
 
 
+# timer.py
+
+
 class TimeLogger:
     def __init__(self):
         self._start_time = None
@@ -18,17 +21,20 @@ class TimeLogger:
         return self._end_time
 
     def start(self) -> 'TimeLogger':
+        """Starts the timer and records the start time."""
         self._start_time = time.time()
         self._end_time = None
         return self
 
     def stop(self) -> 'TimeLogger':
+        """Stops the timer and records the end time."""
         if self._start_time is None:
             raise ValueError("Timer has not been started.")
         self._end_time = time.time()
         return self
 
     def log(self) -> None:
+        """Logs the start and end times, and the elapsed time."""
         msg = None
         if self._start_time and self._end_time is None:
             msg = f"TIMER-START:\t{self._fmt(self._start_time)}"
@@ -41,11 +47,13 @@ class TimeLogger:
         logger.info(msg)
 
     def elapsed_time(self) -> float:
+        """Calculates the elapsed time in seconds."""
         if self._start_time is None or self._end_time is None:
             raise ValueError("Timer has not been started and stopped properly.")
         return round(self._end_time - self._start_time, 4)
 
     def _fmt(self, ts: float):
+        """Formats a timestamp into a human-readable string."""
         if ts is None:
             return None
         dt = datetime.fromtimestamp(ts)

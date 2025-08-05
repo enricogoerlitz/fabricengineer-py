@@ -28,6 +28,7 @@ class ConstantColumn:
 
 
 def get_mock_table_path(table: LakehouseTable) -> str:
+    """Returns the mock table path for testing purposes."""
     if table is None:
         raise ValueError("Table is not initialized.")
     table_path = table.table_path.replace(".", "/")
