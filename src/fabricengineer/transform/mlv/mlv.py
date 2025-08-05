@@ -49,7 +49,7 @@ class MaterializedLakeView:
         self._table_suffix = table_suffix
         self._is_testing_mock = is_testing_mock
 
-        # 'spark' and 'notebookutils' are available in Fabric Notebook
+        # 'spark' and 'notebookutils' are available in Fabric notebook
         self._spark = self._get_init_spark(spark_)
         self._notebookutils = self._get_init_notebookutils(notebookutils_)
         return self
@@ -134,7 +134,7 @@ class MaterializedLakeView:
             if not self.notebookutils.fs.exists(path):
                 return None
             if self._is_testing_mock:
-                with open(path, 'r') as file:
+                with open(path, "r") as file:
                     return file.read()
             df = self.spark.read.text(path, wholetext=True)
             mlv_code = df.collect()[0][0]
@@ -153,7 +153,7 @@ class MaterializedLakeView:
         except Exception as e:
             raise RuntimeError(f"Fehler beim Schreiben der Datei: {e}")
 
-    def create_schema(self) -> None:
+    def create_schema(self) -> DataFrame | None:
         create_schema = f"CREATE SCHEMA IF NOT EXISTS {self.schema_path}"
         logger.info(create_schema)
 
@@ -162,11 +162,11 @@ class MaterializedLakeView:
 
         return self.spark.sql(create_schema)
 
-    def create(self, sql: str) -> DataFrame:
+    def create(self, sql: str) -> DataFrame | None:
         create_mlv = f"CREATE MATERIALIZED LAKE VIEW {self.table_path}\nAS\n{sql}"
-
-        self.create_schema()
         logger.info(f"CREATE MLV: {self.table_path}")
+        self.create_schema()
+
         if self._is_testing_mock:
             return None
 

@@ -54,6 +54,7 @@ def capture_logs(logger: logging.Logger):
     try:
         yield log_stream
     finally:
+        handler.close()
         logger.removeHandler(handler)
 
 

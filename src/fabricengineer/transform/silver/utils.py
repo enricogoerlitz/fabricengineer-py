@@ -9,7 +9,7 @@ from fabricengineer.transform.lakehouse import LakehouseTable
 
 @F.udf(returnType=T.StringType())
 def generate_uuid():
-    """Generiert eine UUID4"""
+    """Generate a UUID4 for spark column."""
     return str(uuid4())
 
 

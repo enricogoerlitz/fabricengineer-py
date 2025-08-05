@@ -8,7 +8,6 @@ from pyspark.sql import (
     functions as F,
     Window
 )
-
 from fabricengineer.transform.silver.utils import (
     ConstantColumn,
     generate_uuid,
@@ -24,6 +23,7 @@ from fabricengineer.logging.logger import logger
 
 class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
     _is_initialized: bool = False
+    _mlv_code: str | None = None
 
     def init(
         self,
@@ -55,9 +55,8 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         is_testing_mock: bool = False
     ) -> None:
-        self._mlv_code = None
-
         self._is_testing_mock = is_testing_mock
+
         self._spark = spark_
         self._df_bronze = df_bronze
         self._historize = historize
@@ -70,7 +69,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._nk_columns = nk_columns
         self._include_comparing_columns = include_comparing_columns
 
-        self._exclude_comparing_columns = exclude_comparing_columns or []
+        self._exclude_comparing_columns: list[str] = exclude_comparing_columns or []
         self._transformations: dict[str, Callable] = transformations or {}
         self._constant_columns: list[ConstantColumn] = constant_columns or []
         self._partition_by: list[str] = partition_by_columns or []
@@ -190,14 +189,20 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._validate_min_length(self._row_update_dts_column, "row_update_dts_column", 3)
         self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_column", 3)
 
+        self._validate_transformations()
+        self._validate_constant_columns()
+
+    def _validate_transformations(self) -> None:
+        """Validates the transformation functions.
+
+        Raises:
+            TypeError: If any transformation function is not callable.
+        """
         for key, fn in self._transformations.items():
             logger.info(f"Transformation function for key '{key}': {fn}")
             if not callable(fn):
                 err_msg = f"The transformation function for key '{key}' is not callable."
                 raise TypeError(err_msg)
-
-        for constant_column in self._constant_columns:
-            self._validate_param_isinstance(constant_column, "constant_column", ConstantColumn)
 
     def _validate_param_isinstance(self, param, param_name: str, obj_class) -> None:
         """Validates a parameter to be the expected class instance
@@ -249,13 +254,11 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             ValueError: when list contains more then one ConstantColumn with part_of_nk=True
         """
         nk_count = 0
-        for column in self._constant_columns:
-            if column.part_of_nk:
-                nk_count += 1
+        for constant_column in self._constant_columns:
+            self._validate_param_isinstance(constant_column, "constant_column", ConstantColumn)
 
-            if not isinstance(column, ConstantColumn):
-                err_msg = "Invalid items in constant_columns found. All items should be instance of ConstantColumn"
-                raise TypeError(err_msg)
+            if constant_column.part_of_nk:
+                nk_count += 1
 
             if nk_count > 1:
                 err_msg = "In constant_columns are more then one part_of_nk=True, what is not supported!"
@@ -280,6 +283,15 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             raise ValueError(err_msg)
 
     def _validate_include_comparing_columns(self, df: DataFrame) -> None:
+        """Validates the include_comparing_columns.
+
+        Args:
+            df (DataFrame): The dataframe to validate against.
+
+        Raises:
+            ValueError: If include_comparing_columns is empty or if any column in include_comparing_columns
+            ValueError: If any column in include_comparing_columns is not present in the dataframe.
+        """
         self._validate_param_isinstance(self._include_comparing_columns, "include_comparing_columns", list)
 
         if len(self._include_comparing_columns) == 0:
@@ -294,6 +306,15 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             raise ValueError(err_msg)
 
     def _validate_partition_by_columns(self, df: DataFrame) -> None:
+        """Validates the partition by columns.
+
+        Args:
+            df (DataFrame): The dataframe to validate against.
+
+        Raises:
+            TypeError: If partition_by is not a list.
+            ValueError: If any partition_column is not present in the dataframe.
+        """
         self._validate_param_isinstance(self._partition_by, "partition_by", list)
 
         for partition_column in self._partition_by:
@@ -322,6 +343,14 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
 
     def ingest(self) -> DataFrame:
+        """Ingests data into the silver layer by using the an insert only strategy.
+
+        Raises:
+            RuntimeError: If the service is not initialized.
+
+        Returns:
+            DataFrame: The ingested silver layer dataframe.
+        """
         if not self._is_initialized:
             raise RuntimeError("The SilverIngestionInsertOnlyService is not initialized. Call the init method first.")
 
@@ -346,7 +375,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         if do_overwrite:
             df_inital_load = df_bronze.select(target_columns_ordered)
             self._write_df(df_inital_load, "overwrite")
-            self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
+            self._manage_historized_mlv(has_schema_changed, target_columns_ordered)
             return df_inital_load
 
         # 2.
@@ -356,28 +385,36 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         df_joined = df_bronze.join(df_silver, join_condition, "outer")
 
         # 3.
-        _, neq_condition = self._get_compare_condition(df_bronze, df_silver, columns_to_compare)
-        updated_filter_condition = self._get_updated_filter(df_bronze, df_silver, neq_condition)
+        _, neq_condition = self._compare_condition(df_bronze, df_silver, columns_to_compare)
+        updated_filter_condition = self._updated_filter(df_bronze, df_silver, neq_condition)
 
         df_new_records = self._filter_new_records(df_joined, df_bronze, df_silver)
         df_updated_records = self._filter_updated_records(df_joined, df_bronze, updated_filter_condition)
 
         # 4.
-        df_data_to_insert = df_new_records.unionByName(df_updated_records).select(target_columns_ordered).dropDuplicates(["PK"])
+        df_data_to_insert = df_new_records.unionByName(df_updated_records) \
+                                          .select(target_columns_ordered) \
+                                          .dropDuplicates(["PK"])
 
         # 6.
         if self._is_delta_load:
             self._write_df(df_data_to_insert, "append")
-            self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
+            self._manage_historized_mlv(has_schema_changed, target_columns_ordered)
             return df_data_to_insert
 
+        # 7.
         df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver).select(target_columns_ordered)
         df_data_to_insert = df_data_to_insert.unionByName(df_deleted_records)
         self._write_df(df_data_to_insert, "append")
-        self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
+        self._manage_historized_mlv(has_schema_changed, target_columns_ordered)
         return df_data_to_insert
 
     def read_silver_df(self) -> DataFrame:
+        """Reads the silver layer DataFrame.
+
+        Returns:
+            DataFrame: The silver layer DataFrame.
+        """
         if self._is_testing_mock:
             if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
@@ -385,10 +422,20 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             return None
 
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
+
+        if self._is_testing_mock:
+            df = self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
+            return df
+
+        df = self._spark.sql(sql_select_destination)
         return df
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame, bool]:
+        """Generates the bronze and silver DataFrames and detects schema changes.
+
+        Returns:
+            tuple[DataFrame, DataFrame, bool]: The bronze DataFrame, silver DataFrame, and a boolean indicating if the schema has changed.
+        """
         df_bronze = self._create_bronze_df()
         df_bronze = self._apply_transformations(df_bronze)
 
@@ -407,7 +454,22 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return df_bronze, df_silver, has_schema_changed
 
-    def _get_compare_condition(self, df_bronze: DataFrame, df_silver: DataFrame, columns_to_compare: list[str]):
+    def _compare_condition(
+        self,
+        df_bronze: DataFrame,
+        df_silver: DataFrame,
+        columns_to_compare: list[str]
+    ) -> tuple[F.Column, F.Column]:
+        """Compares the specified columns of the bronze and silver DataFrames.
+
+        Args:
+            df_bronze (DataFrame): The bronze DataFrame.
+            df_silver (DataFrame): The silver DataFrame.
+            columns_to_compare (list[str]): The columns to compare.
+
+        Returns:
+            tuple[F.Column, F.Column]: The equality and inequality conditions.
+        """
         eq_condition = (
             (df_bronze[columns_to_compare[0]] == df_silver[columns_to_compare[0]]) |
             (df_bronze[columns_to_compare[0]].isNull() & df_silver[columns_to_compare[0]].isNull())
@@ -424,7 +486,22 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return eq_condition, ~eq_condition
 
-    def _get_updated_filter(self, df_bronze: DataFrame, df_silver: DataFrame, neq_condition):
+    def _updated_filter(
+        self,
+        df_bronze: DataFrame,
+        df_silver: DataFrame,
+        neq_condition: F.Column
+    ) -> F.Column:
+        """Creates a filter for updated records.
+
+        Args:
+            df_bronze (DataFrame): The bronze DataFrame.
+            df_silver (DataFrame): The silver DataFrame.
+            neq_condition (Column): not equal condition for the columns to compare.
+
+        Returns:
+            Column: The updated filter condition.
+        """
         updated_filter = (
             (df_bronze[self._nk_column_name].isNotNull()) &
             (df_silver[self._nk_column_name].isNotNull()) &
@@ -433,21 +510,67 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return updated_filter
 
-    def _filter_new_records(self, df_joined: DataFrame, df_bronze: DataFrame, df_silver: DataFrame) -> DataFrame:
+    def _filter_new_records(
+        self,
+        df_joined: DataFrame,
+        df_bronze: DataFrame,
+        df_silver: DataFrame
+    ) -> DataFrame:
+        """Filters new records from the joined DataFrame.
+
+        Args:
+            df_joined (DataFrame): The outer joined DataFrame.
+            df_bronze (DataFrame): The bronze DataFrame.
+            df_silver (DataFrame): The silver DataFrame.
+
+        Returns:
+            DataFrame: The filtered DataFrame containing new records.
+        """
         new_records_filter = (df_silver[self._nk_column_name].isNull())
         df_new_records = df_joined.filter(new_records_filter) \
                                   .select(df_bronze["*"])
 
         return df_new_records
 
-    def _filter_updated_records(self, df_joined: DataFrame, df_bronze: DataFrame, updated_filter) -> DataFrame:
+    def _filter_updated_records(
+        self,
+        df_joined: DataFrame,
+        df_bronze: DataFrame,
+        updated_filter: F.Column
+    ) -> DataFrame:
+        """Filters updated records from the joined DataFrame.
+
+        Args:
+            df_joined (DataFrame): The outer joined DataFrame.
+            df_bronze (DataFrame): The bronze DataFrame.
+            updated_filter (Column): The filter condition for updated records.
+
+        Returns:
+            DataFrame: The filtered DataFrame containing updated records.
+        """
         # Select not matching bronze columns
         df_updated_records = df_joined.filter(updated_filter) \
                                       .select(df_bronze["*"])
 
         return df_updated_records
 
-    def _filter_expired_records(self, df_joined: DataFrame, df_silver: DataFrame, updated_filter) -> DataFrame:
+    def _filter_expired_records(
+        self,
+        df_joined: DataFrame,
+        df_silver: DataFrame,
+        updated_filter: F.Column
+    ) -> DataFrame:
+        """Filters expired records from the joined DataFrame.
+
+        Args:
+            df_joined (DataFrame): The outer joined DataFrame.
+            df_silver (DataFrame): The silver DataFrame.
+            updated_filter (F.Column): The filter condition for updated records.
+
+        Returns:
+            DataFrame: The filtered DataFrame containing expired records.
+        """
+
         # Select not matching silver columns
         df_expired_records = df_joined.filter(updated_filter) \
                                       .select(df_silver["*"]) \
@@ -455,8 +578,24 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return df_expired_records
 
-    def _filter_deleted_records(self, df_joined: DataFrame, df_bronze: DataFrame, df_silver: DataFrame) -> DataFrame:
-        df_deleted_records = df_joined.filter((df_bronze[self._nk_column_name].isNull()) & (df_silver[self._row_delete_dts_column].isNull())) \
+    def _filter_deleted_records(
+        self,
+        df_joined: DataFrame,
+        df_bronze: DataFrame,
+        df_silver: DataFrame
+    ) -> DataFrame:
+        """Filters deleted records from the joined DataFrame.
+
+        Args:
+            df_joined (DataFrame): The outer joined DataFrame.
+            df_bronze (DataFrame): The bronze DataFrame.
+            df_silver (DataFrame): The silver DataFrame.
+
+        Returns:
+            DataFrame: The filtered DataFrame containing deleted records.
+        """
+        filter_condition = (df_bronze[self._nk_column_name].isNull()) & (df_silver[self._row_delete_dts_column].isNull())
+        df_deleted_records = df_joined.filter(filter_condition) \
                                       .select(df_silver["*"]) \
                                       .withColumn(self._pk_column_name, generate_uuid()) \
                                       .withColumn(self._row_delete_dts_column, F.lit(self._current_timestamp)) \
@@ -465,6 +604,18 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         return df_deleted_records
 
     def _create_bronze_df(self) -> DataFrame:
+        """Creates the bronze DataFrame.
+        Adds primary key, natural key, row load timestamp, and row delete timestamp columns.
+        If the DataFrame is already provided, it uses that; otherwise, it reads from the source table.
+        If the DataFrame is not provided and the source table does not exist, it raises an error.
+        If the DataFrame is provided, it validates that it contains all natural key columns.
+        If the DataFrame is not provided, it reads from the source table or mock path.
+        If the DataFrame is provided, it adds constant columns if they are not already present.
+        If the DataFrame is not provided, it reads from the source table or mock path and adds constant columns.
+
+        Returns:
+            DataFrame: The bronze DataFrame.
+        """
         sql_select_source = f"SELECT * FROM {self._src_table.table_path}"
         if isinstance(self._df_bronze, DataFrame):
             df = self._df_bronze
@@ -487,6 +638,17 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         return df
 
     def _create_silver_df(self) -> DataFrame:
+        """Creates the silver DataFrame.
+        Reads the silver table if it exists, or returns None if it does not.
+        If the DataFrame is not provided, it reads from the destination table or mock path.
+        Validates that the DataFrame contains all natural key columns.
+        Adds constant columns if they are not already present.
+        Filters the DataFrame by constant columns that are part of the natural key.
+        Concatenates the natural key columns into a single column.
+
+        Returns:
+            DataFrame: The silver DataFrame.
+        """
         if self._is_testing_mock:
             if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
@@ -494,7 +656,11 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             return None
 
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = self._spark.sql(sql_select_destination) if not self._is_testing_mock else self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
+        df = None
+        if self._is_testing_mock:
+            df = self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
+        elif self._spark.catalog.tableExists(self._dest_table.table_path):
+            df = self._spark.sql(sql_select_destination)
 
         self._validate_nk_columns_in_df(df)
 
@@ -516,7 +682,20 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         return df
 
     def _add_missing_columns(self, df_target: DataFrame, df_source: DataFrame) -> DataFrame:
-        missing_columns = [missing_column for missing_column in df_source.columns if missing_column not in df_target.columns]
+        """Adds missing columns from the source DataFrame to the target DataFrame.
+
+        Args:
+            df_target (DataFrame): The target DataFrame to which missing columns will be added.
+            df_source (DataFrame): The source DataFrame from which missing columns will be taken.
+
+        Returns:
+            DataFrame: The target DataFrame with missing columns added.
+        """
+        missing_columns = [
+            missing_column
+            for missing_column in df_source.columns
+            if missing_column not in df_target.columns
+        ]
 
         for missing_column in missing_columns:
             df_target = df_target.withColumn(missing_column, F.lit(None))
@@ -524,16 +703,43 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         return df_target
 
     def _get_columns_to_compare(self, df: DataFrame) -> list[str]:
-        if isinstance(self._include_comparing_columns, list) and len(self._include_comparing_columns) >= 1:
+        """Get the columns to compare in the DataFrame.
+
+        Args:
+            df (DataFrame): The DataFrame to analyze.
+
+        Returns:
+            list[str]: The columns to compare.
+        """
+        if (
+            isinstance(self._include_comparing_columns, list) and
+            len(self._include_comparing_columns) >= 1
+        ):
             self._validate_include_comparing_columns(df)
             return self._include_comparing_columns
 
-        comparison_columns = [column for column in df.columns if column not in self._exclude_comparing_columns]
+        comparison_columns = [
+            column
+            for column in df.columns
+            if column not in self._exclude_comparing_columns
+        ]
 
         return comparison_columns
 
     def _get_columns_ordered(self, df: DataFrame) -> list[str]:
-        all_columns = [column for column in df.columns if column not in self._dw_columns]
+        """Get the columns in the desired order for processing.
+
+        Args:
+            df (DataFrame): The DataFrame to analyze.
+
+        Returns:
+            list[str]: The columns in the desired order.
+        """
+        all_columns = [
+            column
+            for column in df.columns
+            if column not in self._dw_columns
+        ]
 
         return [self._pk_column_name, self._nk_column_name] + all_columns + [
             self._row_load_dts_column,
@@ -541,6 +747,16 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         ]
 
     def _apply_transformations(self, df: DataFrame) -> DataFrame:
+        """Applies transformations to the DataFrame.
+        Uses the source table name to find the appropriate transformation function.
+        Or uses a wildcard transformation function if available.
+
+        Args:
+            df (DataFrame): The DataFrame to transform.
+
+        Returns:
+            DataFrame: The transformed DataFrame.
+        """
         transform_fn: Callable = self._transformations.get(self._src_table.table)
         transform_fn_all: Callable = self._transformations.get("*")
 
@@ -552,50 +768,74 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return transform_fn(df, self)
 
+    def _manage_historized_mlv(
+            self,
+            has_schema_changed: bool,
+            target_columns_ordered: list[str]
+    ) -> None:
+        """Manages the historized materialized lake view (MLV) creation, replacement, and refresh.
+
+        Args:
+            has_schema_changed (bool): Indicates if the schema has changed.
+            target_columns_ordered (list[str]): The ordered list of target columns.
+        """
+        if not self._is_create_hist_mlv:
+            logger.info("MLV: Historized MLV creation is disabled.")
+            return
+
+        self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
+        self._refresh_historized_mlv()
+
     def _create_or_replace_historized_mlv(
             self,
             has_schema_changed: bool,
             target_columns_ordered: list[str]
     ) -> None:
+        """Creates or replaces the historized materialized lake view (MLV).
+
+        Args:
+            has_schema_changed (bool): Indicates if the schema has changed.
+            target_columns_ordered (list[str]): The ordered list of target columns.
+        """
         if not has_schema_changed:
             logger.info("MLV: No schema change detected.")
             return
+
         self._drop_historized_mlv()
         self._create_historized_mlv(target_columns_ordered)
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:
+        """
+        Creates a historized materialized lake view (MLV).
+
+        Args:
+            target_columns_ordered (list[str]): The ordered list of target columns for the MLV
+        """
         logger.info(f"MLV: CREATE MLV {self.mlv_name}")
-        if not self._is_create_hist_mlv:
+
+        silver_columns_ordered_str = self._mlv_silver_columns_ordered_str(target_columns_ordered)
+        final_ordered_columns_str = self._mlv_final_column_order_str(target_columns_ordered)
+        constant_column_str = self._mlv_constant_column_str()
+
+        self._mlv_code = self._generate_mlv_code(
+            silver_columns_ordered_str,
+            final_ordered_columns_str,
+            constant_column_str
+        )
+
+        if self._is_testing_mock:
             return
 
-        last_columns_ordered = [
-            self._row_is_current_column,
-            self._row_hist_number_column,
-            self._row_update_dts_column,
-            self._row_delete_dts_column,
-            self._row_load_dts_column
-        ]
+        self._spark.sql(self._mlv_code)
 
-        silver_columns_ordered_str = ",\n".join([f"`{column}`" for column in target_columns_ordered])
-
-        final_ordered_columns = [
-            column
-            for column in target_columns_ordered
-            if column not in last_columns_ordered
-        ] + last_columns_ordered
-
-        final_ordered_columns_str = ",\n".join([f"`{column}`" for column in final_ordered_columns])
-
-        assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
-               f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
-
-        constant_column_str = ""
-        for constant_column in self._constant_columns:
-            if constant_column.part_of_nk:
-                constant_column_str = f", `{constant_column.name}`"
-                break
-
-        self._mlv_code = f"""
+    def _generate_mlv_code(
+            self,
+            silver_columns_ordered_str: str,
+            final_ordered_columns_str: str,
+            constant_column_str: str
+    ) -> str:
+        """Generates the SQL code for creating a materialized lake view (MLV)."""
+        return f"""
 CREATE MATERIALIZED LAKE VIEW {self.mlv_name}
 AS
 WITH cte_mlv AS (
@@ -613,12 +853,66 @@ SELECT
 {final_ordered_columns_str}
 FROM cte_mlv
 """
-        if self._is_testing_mock:
-            return
 
-        self._spark.sql(self._mlv_code)
+    def _mlv_silver_columns_ordered_str(self, target_columns_ordered: list[str]) -> str:
+        """Generates a string representation of the silver columns for the materialized lake view (MLV).
+
+        Args:
+            target_columns_ordered (list[str]): The ordered list of target columns.
+
+        Returns:
+            _type_: _description_
+        """
+        silver_columns_ordered_str = ",\n".join([f"`{column}`" for column in target_columns_ordered])
+        return silver_columns_ordered_str
+
+    def _mlv_final_column_order_str(self, target_columns_ordered: list[str]) -> str:
+        """Generates a string representation of the final column order for the materialized lake view (MLV).
+
+        Args:
+            target_columns_ordered (list[str]): The ordered list of target columns.
+
+        Returns:
+            str: A string representation of the final column order for the MLV.
+        """
+        last_columns_ordered = [
+            self._row_is_current_column,
+            self._row_hist_number_column,
+            self._row_update_dts_column,
+            self._row_delete_dts_column,
+            self._row_load_dts_column
+        ]
+        final_ordered_columns = [
+            column
+            for column in target_columns_ordered
+            if column not in last_columns_ordered
+        ] + last_columns_ordered
+
+        final_ordered_columns_str = ",\n".join([f"`{column}`" for column in final_ordered_columns])
+
+        assert len(set(final_ordered_columns)) == len(final_ordered_columns), \
+               f"Duplicate columns found in final ordered columns {final_ordered_columns_str}."
+
+        return final_ordered_columns_str
+
+    def _mlv_constant_column_str(self) -> str:
+        """Generates a string representation of the constant columns that are part of the natural key (NK).
+
+        Returns:
+            str: A string representation of the constant columns for use in MLV creation.
+        """
+        constant_column_str = ""
+        for constant_column in self._constant_columns:
+            if constant_column.part_of_nk:
+                constant_column_str = f", `{constant_column.name}`"
+                break
+        return constant_column_str
 
     def _drop_historized_mlv(self) -> None:
+        """Drops the historized materialized lake view (MLV)."""
+        if not self._is_create_hist_mlv:
+            return
+
         drop_mlv_sql = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.mlv_name}"
         logger.info(drop_mlv_sql)
 
@@ -628,6 +922,10 @@ FROM cte_mlv
         self._spark.sql(drop_mlv_sql)
 
     def _refresh_historized_mlv(self) -> None:
+        """Refreshes the historized materialized lake view (MLV)."""
+        if not self._is_create_hist_mlv:
+            return
+
         refresh_mlv_sql = f"REFRESH MATERIALIZED LAKE VIEW {self.mlv_name}"
         logger.info(refresh_mlv_sql)
 
@@ -651,6 +949,12 @@ FROM cte_mlv
         return set(df_bronze.columns) != set(df_silver.columns)
 
     def _write_df(self, df: DataFrame, write_mode: str) -> None:
+        """Writes the DataFrame to the specified location.
+
+        Args:
+            df (DataFrame): The DataFrame to write.
+            write_mode (str): The write mode (e.g., "overwrite", "append").
+        """
         writer = df.write \
             .format("delta") \
             .mode(write_mode) \
