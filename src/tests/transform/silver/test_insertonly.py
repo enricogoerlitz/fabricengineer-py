@@ -594,6 +594,82 @@ def test_ingest_remove_column(spark_: SparkSession):
         assert row["ncol"] == expected_data[i].ncol
 
 
+def test_ingest_reactivating_deleted_values_in_source(spark_: SparkSession):
+    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
+    etl = SilverIngestionInsertOnlyService()
+    etl.init(**etl_kwargs)
+
+    init_data = [
+        BronzeDataFrameRecord(id=1, name="Name-1"),
+        BronzeDataFrameRecord(id=2, name="Name-2"),
+        BronzeDataFrameRecord(id=3, name="Name-3"),
+        BronzeDataFrameRecord(id=4, name="Name-4"),
+        BronzeDataFrameRecord(id=5, name="Name-5")
+    ]
+    expected_data = [r for r in init_data]
+
+    bronze = BronzeDataFrameDataGenerator(
+        spark=spark_,
+        table=etl_kwargs["source_table"],
+        init_data=init_data
+    )
+
+    bronze.write().read()
+
+    # 1. Init silver ingestion
+    inserted_df = etl.ingest()
+    silver_df_1 = etl.read_silver_df()
+
+    assert inserted_df is not None
+    assert inserted_df.count() == len(expected_data)
+    assert bronze.df.count() == len(expected_data)
+    assert silver_df_1.count() == len(expected_data)
+
+    # 2. delete some records
+    deleted_data_ids = [1, 3, 5]
+
+    bronze.delete_records(deleted_data_ids) \
+          .write() \
+          .read()
+
+    inserted_df_2 = etl.ingest()
+    silver_df_2 = etl.read_silver_df()
+
+    expected_data += [r for r in init_data if r.id in deleted_data_ids]
+
+    assert bronze.df.count() == len(init_data) - len(deleted_data_ids)
+    assert inserted_df_2 is not None
+    assert inserted_df_2.count() == len(deleted_data_ids)
+    assert silver_df_2.count() == len(expected_data)
+
+    # 3. reactivating deleted records in source
+    reactivated_data_ids = [1, 5]
+    reactivated_data = [r for r in init_data if r.id in reactivated_data_ids]
+
+    bronze.add_records(reactivated_data) \
+          .write() \
+          .read()
+
+    inserted_df_3 = etl.ingest()
+    silver_df_3 = etl.read_silver_df()
+
+    expected_data += [r for r in init_data if r.id in reactivated_data_ids]
+
+    assert reactivated_data_ids > 0
+    assert bronze.df.count() == len(init_data) - len(deleted_data_ids) + len(reactivated_data_ids)
+    assert inserted_df_3 is not None
+    assert inserted_df_3.count() == len(reactivated_data_ids)
+    assert silver_df_3.count() == len(expected_data)
+
+    for del_id in reactivated_data_ids:
+        print("Testing deleted id:", del_id)
+        df_test_deletes = silver_df_3.filter(F.col("id") == del_id)
+        assert df_test_deletes.count() == 3
+        assert df_test_deletes.filter(F.col("ROW_DELETE_DTS").isNull()).count() == 2
+        assert df_test_deletes.filter(F.col("ROW_DELETE_DTS").isNotNull()).count() == 1
+        assert df_test_deletes.orderBy(F.col("ROW_LOAD_DTS").desc()).collect()[0]["ROW_DELETE_DTS"] is None
+
+
 def test_ingest_with_transformations(spark_: SparkSession):
     prefix = "Transformed-"
 
@@ -1158,7 +1234,7 @@ def test_ingest_with_constant_columns(spark_: SparkSession):
     assert silver_df_3.filter(F.col("INSTANCE") == "asia").count() == 4
 
 
-def test_ingest_with_mlv_values(spark_: SparkSession):
+def test_ingest_mlv_code(spark_: SparkSession):
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl = SilverIngestionInsertOnlyService()
     etl.init(**etl_kwargs)

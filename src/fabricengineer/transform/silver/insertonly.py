@@ -677,7 +677,16 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         window_spec = Window.partitionBy(self._nk_columns).orderBy(df[self._row_load_dts_column].desc())
         df_with_rownum = df.withColumn("ROW_NUMBER", F.row_number().over(window_spec))
-        df = df_with_rownum.filter(df_with_rownum["ROW_NUMBER"] == 1).select(return_columns)
+        # df = df_with_rownum.filter(df_with_rownum["ROW_NUMBER"] == 1).select(return_columns)
+
+        # ------ NEW ------
+        current_record_filter = (
+            # (df_with_rownum["ROW_NUMBER"] == 1) &
+            (F.col("ROW_NUMBER") == 1) &
+            (F.col(self._row_delete_dts_column).isNull())
+        )
+        df = df_with_rownum.filter(current_record_filter).select(return_columns)
+        # ------ NEW ------
 
         return df
 
