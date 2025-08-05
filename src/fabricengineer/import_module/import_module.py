@@ -88,7 +88,7 @@ def _import_module_mlv(base_path: str) -> str:
     imports = """
 from typing import Any
 from pyspark.sql import DataFrame, SparkSession
-from src.fabricengineer.logging.logger import logger
+from fabricengineer.logging.logger import logger
 """.strip()
 
     code = "\n\n\n".join([
