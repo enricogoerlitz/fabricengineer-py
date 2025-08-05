@@ -115,11 +115,11 @@ etl = SilverIngesationSCD2(
 )
 
 
-timer.start().print()
+timer.start().log()
 
 etl.run()
 
-timer.end().print()
+timer.end().log()
 
 
 

@@ -16,6 +16,7 @@ from fabricengineer.transform.silver.utils import (
 )
 from fabricengineer.transform.lakehouse import LakehouseTable
 from fabricengineer.transform.silver.base import BaseSilverIngestionService
+from fabricengineer.logging.logger import logger
 
 
 # insertonly.py
@@ -190,7 +191,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_column", 3)
 
         for key, fn in self._transformations.items():
-            print("Transformation function:", fn)
+            logger.info(f"Transformation function for key '{key}': {fn}")
             if not callable(fn):
                 err_msg = f"The transformation function for key '{key}' is not callable."
                 raise TypeError(err_msg)
@@ -557,13 +558,13 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             target_columns_ordered: list[str]
     ) -> None:
         if not has_schema_changed:
-            print("MLV: No schema change detected.")
+            logger.info("MLV: No schema change detected.")
             return
         self._drop_historized_mlv()
         self._create_historized_mlv(target_columns_ordered)
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:
-        print(f"MLV: CREATE MLV {self.mlv_name}")
+        logger.info(f"MLV: CREATE MLV {self.mlv_name}")
         if not self._is_create_hist_mlv:
             return
 
@@ -619,7 +620,7 @@ FROM cte_mlv
 
     def _drop_historized_mlv(self) -> None:
         drop_mlv_sql = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.mlv_name}"
-        print(drop_mlv_sql)
+        logger.info(drop_mlv_sql)
 
         if self._is_testing_mock:
             return
@@ -628,7 +629,7 @@ FROM cte_mlv
 
     def _refresh_historized_mlv(self) -> None:
         refresh_mlv_sql = f"REFRESH MATERIALIZED LAKE VIEW {self.mlv_name}"
-        print(refresh_mlv_sql)
+        logger.info(refresh_mlv_sql)
 
         if self._is_testing_mock:
             return

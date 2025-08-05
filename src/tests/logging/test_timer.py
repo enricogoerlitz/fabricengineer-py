@@ -71,7 +71,7 @@ def test_log_start_message():
 
     _, logs = sniff_logs(lambda: tl.log())
     assert len(logs) == 1
-    assert logs[0].startswith("TIMER-START:")
+    assert "TIMER-START:" in logs[0]
     assert "2009-02-" in logs[0]
 
 
@@ -83,7 +83,7 @@ def test_log_end_message():
 
     _, logs = sniff_logs(lambda: tl.log())
     assert len(logs) == 1
-    assert logs[0].startswith("TIMER-END:")
+    assert "TIMER-END:" in logs[0]
     assert "2009-02-" in logs[0]
     assert "ELAPSED: 2.5s" in logs[0]
 
@@ -94,7 +94,7 @@ def test_log_invalid_state_message():
     # Timer not started
     _, logs = sniff_logs(lambda: tl.log())
     assert len(logs) == 1
-    assert logs[0] == "Timer has not been started and stopped properly."
+    assert logs[0].endswith("Timer has not been started and stopped properly.")
 
 
 def test_str_representation():
@@ -132,7 +132,7 @@ def test_normal_usage_pattern():
     # Start timer and log
     _, start_logs = sniff_logs(lambda: tl.start().log())
     assert len(start_logs) == 1
-    assert start_logs[0].startswith("TIMER-START:")
+    assert "TIMER-START:" in start_logs[0]
 
     # Simulate some work
     time.sleep(0.1)  # Use minimal sleep for test speed
@@ -140,7 +140,7 @@ def test_normal_usage_pattern():
     # Stop timer and log
     _, end_logs = sniff_logs(lambda: tl.stop().log())
     assert len(end_logs) == 1
-    assert end_logs[0].startswith("TIMER-END:")
+    assert "TIMER-END:" in end_logs[0]
     assert "ELAPSED:" in end_logs[0]
 
     # Verify elapsed time is reasonable
@@ -160,13 +160,13 @@ def test_global_timer_instance():
     # Test normal usage with global instance
     _, start_logs = sniff_logs(lambda: timer.start().log())
     assert len(start_logs) == 1
-    assert start_logs[0].startswith("TIMER-START:")
+    assert "TIMER-START:" in start_logs[0]
 
     time.sleep(0.1)
 
     _, end_logs = sniff_logs(lambda: timer.stop().log())
     assert len(end_logs) == 1
-    assert end_logs[0].startswith("TIMER-END:")
+    assert "TIMER-END:" in end_logs[0]
 
 
 def test_multiple_start_calls():

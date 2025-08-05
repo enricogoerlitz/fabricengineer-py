@@ -1,6 +1,7 @@
 import time
 
 from datetime import datetime
+from fabricengineer.logging.logger import logger
 
 
 class TimeLogger:
@@ -35,7 +36,9 @@ class TimeLogger:
             msg = f"TIMER-END:\t{self._fmt(self._end_time)}, ELAPSED: {self.elapsed_time()}s"
         else:
             msg = "Timer has not been started and stopped properly."
-        print(msg)
+            logger.warning(msg)
+            return
+        logger.info(msg)
 
     def elapsed_time(self) -> float:
         if self._start_time is None or self._end_time is None:

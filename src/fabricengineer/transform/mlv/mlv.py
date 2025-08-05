@@ -1,5 +1,6 @@
 from typing import Any
 from pyspark.sql import DataFrame, SparkSession
+from fabricengineer.logging.logger import logger
 
 
 # mlv.py
@@ -154,7 +155,7 @@ class MaterializedLakeView:
 
     def create_schema(self) -> None:
         create_schema = f"CREATE SCHEMA IF NOT EXISTS {self.schema_path}"
-        print(create_schema)
+        logger.info(create_schema)
 
         if self._is_testing_mock:
             return None
@@ -165,7 +166,7 @@ class MaterializedLakeView:
         create_mlv = f"CREATE MATERIALIZED LAKE VIEW {self.table_path}\nAS\n{sql}"
 
         self.create_schema()
-        print(f"CREATE MLV: {self.table_path}")
+        logger.info(f"CREATE MLV: {self.table_path}")
         if self._is_testing_mock:
             return None
 
@@ -173,7 +174,7 @@ class MaterializedLakeView:
 
     def drop(self) -> str:
         drop_mlv = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.table_path}"
-        print(drop_mlv)
+        logger.info(drop_mlv)
 
         if self._is_testing_mock:
             return None
@@ -194,17 +195,17 @@ class MaterializedLakeView:
             return res
 
         elif mlv_code_current is None and is_existing:
-            print("WARN: file=None, is_existing=True. RECREATE.")
+            logger.warning("WARN: file=None, is_existing=True. RECREATE.")
             self.drop()
             res = self.create(sql)
             self.write_file(sql)
             return res
 
         elif sql == mlv_code_current and is_existing:
-            print("Nothing has changed.")
+            logger.info("Nothing has changed.")
             return None
 
-        print(f"REPLACE MLV: {self.table_path}")
+        logger.info(f"REPLACE MLV: {self.table_path}")
         self.drop()
         res = self.create(sql)
         self.write_file(sql)
@@ -213,7 +214,7 @@ class MaterializedLakeView:
     def refresh(self, full_refresh: bool) -> DataFrame:
         full_refresh_str = "FULL" if full_refresh else ""
         refresh_mlv = f"REFRESH MATERIALIZED LAKE VIEW {self.table_path} {full_refresh_str}"
-        print(refresh_mlv)
+        logger.info(refresh_mlv)
 
         if self._is_testing_mock:
             return None

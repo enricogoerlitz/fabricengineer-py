@@ -1,8 +1,10 @@
 import io
 import os
+import logging
 
-from typing import Any
-from contextlib import redirect_stdout
+from typing import Any, Callable
+from contextlib import redirect_stdout, contextmanager
+from fabricengineer.logging.logger import logger
 
 
 class NotebookUtilsFSMock:
@@ -40,7 +42,29 @@ def mount_py_file(file_path: str) -> None:
     return locals().get('mlv', None)
 
 
-def sniff_logs(fn: callable) -> tuple[Any, list[str]]:
+@contextmanager
+def capture_logs(logger: logging.Logger):
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.DEBUG)  # Fang alles ab
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(filename)s %(message)s", "%d.%m.%Y %H:%M:%S,%f")
+    handler.setFormatter(formatter)
+
+    logger.addHandler(handler)
+    try:
+        yield log_stream
+    finally:
+        logger.removeHandler(handler)
+
+
+def sniff_logs(fn: Callable[[], Any]) -> tuple[Any, list[str]]:
+    with capture_logs(logger) as log_stream:
+        result = fn()
+    logs = log_stream.getvalue().splitlines()
+    return result, logs
+
+
+def sniff_print_logs(fn: callable) -> tuple[Any, list[str]]:
     log_stream = io.StringIO()
     with redirect_stdout(log_stream):
         result = fn()

@@ -1,3 +1,4 @@
+from venv import logger
 import pytest
 
 from datetime import datetime
@@ -429,7 +430,7 @@ def test_ingest(spark_: SparkSession):
 
     deleted_count = 0
     for i, row in enumerate(silver_df_3.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
-        print(f"Row {i}: {row}")
+        logger.info(f"Row {i}: {row}")
         expected_record = current_expected_data[i]
         assert row["id"] == expected_record.id
         assert row["name"] == expected_record.name
