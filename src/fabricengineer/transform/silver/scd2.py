@@ -144,6 +144,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
 
         # 5.
         df_expired_records = self._filter_expired_records(df_joined, df_silver, updated_filter_condition)
+        # df_reactivated_records = ... records, die auf delete gesetzt sind, aber wieder reaktiviert wurden: eigentlich einfach neu einfügen...
 
         # 6.
         if self._is_delta_load:
@@ -259,6 +260,8 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
                 df = df.filter(F.col(constant_column.name) == constant_column.value)
 
         df = df.withColumn(self._nk_column_name, F.concat_ws(self._nk_column_concate_str, *self._nk_columns))
+
+        df = df.filter(F.col(self._row_is_current_column) == 1)
 
         return df
 
