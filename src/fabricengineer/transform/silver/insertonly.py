@@ -1,7 +1,7 @@
 import os
 
+from typing import Any
 from datetime import datetime
-from typing import Callable
 from pyspark.sql import (
     SparkSession,
     DataFrame,
@@ -14,14 +14,15 @@ from fabricengineer.transform.silver.utils import (
     get_mock_table_path
 )
 from fabricengineer.transform.lakehouse import LakehouseTable
-from fabricengineer.transform.silver.base import BaseSilverIngestionService
+from fabricengineer.transform.silver.base import BaseSilverIngestionServiceImpl
+from fabricengineer.transform.mlv import MaterializedLakeView
 from fabricengineer.logging.logger import logger
 
 
 # insertonly.py
 
 
-class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
+class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
     _is_initialized: bool = False
     _mlv_code: str | None = None
 
@@ -29,6 +30,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self,
         *,
         spark_: SparkSession,
+        notebookutils_: Any = None,
         source_table: LakehouseTable,
         destination_table: LakehouseTable,
         nk_columns: list[str],
@@ -55,292 +57,75 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         is_testing_mock: bool = False
     ) -> None:
-        self._is_testing_mock = is_testing_mock
-
-        self._spark = spark_
-        self._df_bronze = df_bronze
-        self._historize = historize
-        self._is_create_hist_mlv = create_historized_mlv
         self._mlv_suffix = mlv_suffix
-        self._is_delta_load = is_delta_load
-        self._delta_load_use_broadcast = delta_load_use_broadcast
-        self._src_table = source_table
-        self._dest_table = destination_table
-        self._nk_columns = nk_columns
-        self._include_comparing_columns = include_comparing_columns
 
-        self._exclude_comparing_columns: list[str] = exclude_comparing_columns or []
-        self._transformations: dict[str, Callable] = transformations or {}
-        self._constant_columns: list[ConstantColumn] = constant_columns or []
-        self._partition_by: list[str] = partition_by_columns or []
-
-        self._pk_column_name = pk_column_name
-        self._nk_column_name = nk_column_name
-        self._nk_column_concate_str = nk_column_concate_str
-        self._row_hist_number_column = row_hist_number_column
-        self._row_is_current_column = row_is_current_column
-        self._row_update_dts_column = row_update_dts_column
-        self._row_delete_dts_column = row_delete_dts_column
-        self._row_load_dts_column = row_load_dts_column
-
-        self._validate_parameters()
-        self._set_spark_config()
-
-        self._dw_columns = [
-            self._pk_column_name,
-            self._nk_column_name,
-            self._row_delete_dts_column,
-            self._row_load_dts_column
+        dw_columns = [
+            pk_column_name,
+            nk_column_name,
+            row_delete_dts_column,
+            row_load_dts_column
         ]
 
-        self._exclude_comparing_columns = set(
-            [self._pk_column_name]
-            + self._nk_columns
-            + self._dw_columns
-            + self._exclude_comparing_columns
-            + [column.name for column in self._constant_columns]
+        super().init(
+            spark_=spark_,
+            source_table=source_table,
+            destination_table=destination_table,
+            nk_columns=nk_columns,
+            constant_columns=constant_columns,
+            is_delta_load=is_delta_load,
+            delta_load_use_broadcast=delta_load_use_broadcast,
+            transformations=transformations,
+            exclude_comparing_columns=exclude_comparing_columns or [],
+            include_comparing_columns=include_comparing_columns or [],
+            historize=historize,
+            partition_by_columns=partition_by_columns or [],
+            df_bronze=df_bronze,
+            create_historized_mlv=create_historized_mlv,
+            dw_columns=dw_columns,
+
+            pk_column_name=pk_column_name,
+            nk_column_name=nk_column_name,
+            nk_column_concate_str=nk_column_concate_str,
+            row_is_current_column=row_is_current_column,
+            row_hist_number_column=row_hist_number_column,
+            row_update_dts_column=row_update_dts_column,
+            row_delete_dts_column=row_delete_dts_column,
+            row_load_dts_column=row_load_dts_column,
+
+            is_testing_mock=is_testing_mock
         )
 
-        self._spark.catalog.clearCache()
+        self._validate_insertonly_params()
+
+        self._mlv = MaterializedLakeView(
+            lakehouse=self._dest_table.lakehouse,
+            schema=self._dest_table.schema,
+            table=self._dest_table.table,
+            table_suffix=self._mlv_suffix,
+            spark_=self._spark,
+            notebookutils_=notebookutils_,
+            is_testing_mock=self._is_testing_mock
+        )
+
         self._is_initialized = True
 
     @property
     def mlv_name(self) -> str:
-        return f"{self._dest_table.table_path}{self._mlv_suffix}"
+        return self._mlv.table_path
 
     @property
     def mlv_code(self) -> str:
         return self._mlv_code
 
+    def _validate_insertonly_params(self) -> None:
+        if self._mlv_suffix is not None:
+            self._validate_param_isinstance(self._mlv_suffix, "mlv_suffix", str)
+            self._validate_min_length(self._mlv_suffix, "mlv_suffix", 1)
+
     def __str__(self) -> str:
-        if not self._is_initialized:
-            return super.__str__(self)
-
-        return str({
-            "historize": self._historize,
-            "is_delta_load": self._is_delta_load,
-            "delta_load_use_broadcast": self._delta_load_use_broadcast,
-            "src_table_path": self._src_table.table_path,
-            "dist_table_path": self._dest_table.table_path,
-            "nk_columns": self._nk_columns,
-            "include_comparing_columns": self._include_comparing_columns,
-            "exclude_comparing_columns": self._exclude_comparing_columns,
-            "transformations": self._transformations,
-            "constant_columns": self._constant_columns,
-            "partition_by": self._partition_by,
-            "pk_column": self._pk_column_name,
-            "nk_column": self._nk_column_name,
-            "nk_column_concate_str": self._nk_column_concate_str,
-            "row_update_dts_column": self._row_update_dts_column,
-            "row_delete_dts_column": self._row_delete_dts_column,
-            "ldts_column": self._row_load_dts_column,
-            "dw_columns": self._dw_columns
-        })
-
-    def _validate_parameters(self) -> None:
-        """Validates the in constructor setted parameters, so the etl can run.
-
-        Raises:
-            ValueError: when a valueerror occurs
-            TypeError: when a typerror occurs
-            Exception: generic exception
-        """
-
-        if self._df_bronze is not None:
-            self._validate_param_isinstance(self._df_bronze, "df_bronze", DataFrame)
-
-        self._validate_param_isinstance(self._spark, "spark", SparkSession)
-        self._validate_param_isinstance(self._historize, "historize", bool)
-        self._validate_param_isinstance(self._is_create_hist_mlv, "create_historized_mlv", bool)
-        self._validate_param_isinstance(self._is_delta_load, "is_delta_load", bool)
-        self._validate_param_isinstance(self._delta_load_use_broadcast, "delta_load_use_broadcast", bool)
-        self._validate_param_isinstance(self._transformations, "transformations", dict)
-        self._validate_param_isinstance(self._src_table, "src_table", LakehouseTable)
-        self._validate_param_isinstance(self._dest_table, "dest_table", LakehouseTable)
-        self._validate_param_isinstance(self._include_comparing_columns, "include_columns_from_comparing", list)
-        self._validate_param_isinstance(self._exclude_comparing_columns, "exclude_columns_from_comparing", list)
-        self._validate_param_isinstance(self._partition_by, "partition_by_columns", list)
-        self._validate_param_isinstance(self._pk_column_name, "pk_column", str)
-        self._validate_param_isinstance(self._nk_column_name, "nk_column", str)
-        self._validate_param_isinstance(self._nk_columns, "nk_columns", list)
-        self._validate_param_isinstance(self._nk_column_concate_str, "nk_column_concate_str", str)
-        self._validate_param_isinstance(self._mlv_suffix, "mlv_suffix", str)
-        self._validate_param_isinstance(self._constant_columns, "constant_columns", list)
-        self._validate_param_isinstance(self._row_load_dts_column, "row_load_dts_column", str)
-        self._validate_param_isinstance(self._row_hist_number_column, "row_hist_number_column", str)
-        self._validate_param_isinstance(self._row_is_current_column, "row_is_current_column", str)
-        self._validate_param_isinstance(self._row_update_dts_column, "row_update_dts_column", str)
-        self._validate_param_isinstance(self._row_delete_dts_column, "row_delete_dts_column", str)
-
-        self._validate_min_length(self._pk_column_name, "pk_column", 2)
-        self._validate_min_length(self._nk_column_name, "nk_column", 2)
-        self._validate_min_length(self._src_table.lakehouse, "src_lakehouse", 3)
-        self._validate_min_length(self._src_table.schema, "src_schema", 1)
-        self._validate_min_length(self._src_table.table, "src_tablename", 3)
-        self._validate_min_length(self._dest_table.lakehouse, "dest_lakehouse", 3)
-        self._validate_min_length(self._dest_table.schema, "dest_schema", 1)
-        self._validate_min_length(self._dest_table.table, "dest_tablename", 3)
-        self._validate_min_length(self._nk_columns, "nk_columns", 1)
-        self._validate_min_length(self._nk_column_concate_str, "nk_column_concate_str", 1)
-        self._validate_min_length(self._mlv_suffix, "mlv_suffix", 1)
-        self._validate_min_length(self._row_load_dts_column, "row_load_dts_column", 3)
-        self._validate_min_length(self._row_hist_number_column, "row_hist_number_column", 3)
-        self._validate_min_length(self._row_is_current_column, "row_is_current_column", 3)
-        self._validate_min_length(self._row_update_dts_column, "row_update_dts_column", 3)
-        self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_column", 3)
-
-        self._validate_transformations()
-        self._validate_constant_columns()
-
-    def _validate_transformations(self) -> None:
-        """Validates the transformation functions.
-
-        Raises:
-            TypeError: If any transformation function is not callable.
-        """
-        for key, fn in self._transformations.items():
-            logger.info(f"Transformation function for key '{key}': {fn}")
-            if not callable(fn):
-                err_msg = f"The transformation function for key '{key}' is not callable."
-                raise TypeError(err_msg)
-
-    def _validate_param_isinstance(self, param, param_name: str, obj_class) -> None:
-        """Validates a parameter to be the expected class instance
-
-        Args:
-            param (any): parameter
-            param_name (str): parametername
-            obj_class (_type_): class
-
-        Raises:
-            TypeError: when actual type is different from expected type
-        """
-        if not isinstance(param, obj_class):
-            err_msg = f"The param '{param_name}' should be type of {obj_class.__name__}, but was {str(param.__class__)}"
-            raise TypeError(err_msg)
-
-    def _validate_min_length(self, param, param_name: str, min_length: int) -> None:
-        """Validates a string or list to be not none and has a minimum length
-
-        Args:
-            param (_type_): parameter
-            param_name (str): parametername
-            min_length (int): minimum lenght
-
-        Raises:
-            TypeError: when actual type is different from expected type
-            ValueError: when parametervalue is to short
-        """
-        if not isinstance(param, str) and not isinstance(param, list):
-            err_msg = f"The param '{param_name}' should be type of string or list, but was {str(param.__class__)}"
-            raise TypeError(err_msg)
-
-        param_length = len(param)
-        if param_length < min_length:
-            err_msg = f"Param length to short. The minimum length of the param '{param_name}' is {min_length} but was {param_length}"
-            raise ValueError(err_msg)
-
-    def _validate_constant_columns(self) -> None:
-        """Validates the given constant columns to be an instance of ConstantColumns and
-        list contains only one part_of_nk=True, because of the following filtering of the dataframe.
-
-        It should have just one part_of_nk=True, because the dataframe will filtered later by the
-        constant_column.name, if part_of_nk=True.
-        If part_of_nk=True should be supported more then once, then we need to implement
-        an "and" filtering.
-
-        Raises:
-            TypeError: when an item of the list is not an instance of ConstantColumn
-            ValueError: when list contains more then one ConstantColumn with part_of_nk=True
-        """
-        nk_count = 0
-        for constant_column in self._constant_columns:
-            self._validate_param_isinstance(constant_column, "constant_column", ConstantColumn)
-
-            if constant_column.part_of_nk:
-                nk_count += 1
-
-            if nk_count > 1:
-                err_msg = "In constant_columns are more then one part_of_nk=True, what is not supported!"
-                raise ValueError(err_msg)
-
-    def _validate_nk_columns_in_df(self, df: DataFrame) -> None:
-        """Validates the given dataframe. The given dataframe should contain all natural key columns,
-        because all natural key columns will selected and used for concatitation.
-
-        Args:
-            df (DataFrame): dataframe to validate
-
-        Raises:
-            ValueError: when dataframe does not contain all natural key columns
-        """
-        df_columns = set(df.columns)
-        for column in self._nk_columns:
-            if column in df_columns:
-                continue
-
-            err_msg = f"The NK Column '{column}' does not exist in df columns: {df_columns}"
-            raise ValueError(err_msg)
-
-    def _validate_include_comparing_columns(self, df: DataFrame) -> None:
-        """Validates the include_comparing_columns.
-
-        Args:
-            df (DataFrame): The dataframe to validate against.
-
-        Raises:
-            ValueError: If include_comparing_columns is empty or if any column in include_comparing_columns
-            ValueError: If any column in include_comparing_columns is not present in the dataframe.
-        """
-        self._validate_param_isinstance(self._include_comparing_columns, "include_comparing_columns", list)
-
-        if len(self._include_comparing_columns) == 0:
-            err_msg = "The param 'include_comparing_columns' is present, but don't contains any columns."
-            raise ValueError(err_msg)
-
-        for include_column in self._include_comparing_columns:
-            if include_column in df.columns:
-                continue
-
-            err_msg = f"The column '{include_column}' should be compared, but is not given in df."
-            raise ValueError(err_msg)
-
-    def _validate_partition_by_columns(self, df: DataFrame) -> None:
-        """Validates the partition by columns.
-
-        Args:
-            df (DataFrame): The dataframe to validate against.
-
-        Raises:
-            TypeError: If partition_by is not a list.
-            ValueError: If any partition_column is not present in the dataframe.
-        """
-        self._validate_param_isinstance(self._partition_by, "partition_by", list)
-
-        for partition_column in self._partition_by:
-            if partition_column in df.columns:
-                continue
-
-            err_msg = f"The column '{partition_column}' should be partitioned, but is not given in df."
-            raise ValueError(err_msg)
-
-    def _set_spark_config(self) -> None:
-        """Sets additional spark configurations
-
-        spark.sql.parquet.vorder.enabled: Setting "spark.sql.parquet.vorder.enabled" to "true" in PySpark config enables a feature called vectorized parquet decoding.
-                                                  This optimizes the performance of reading Parquet files by leveraging vectorized instructions and processing multiple values at once, enhancing overall processing speed.
-
-        Setting "spark.sql.parquet.int96RebaseModeInRead" and "spark.sql.legacy.parquet.int96RebaseModeInWrite" to "CORRECTED" ensures that Int96 values (a specific timestamp representation used in Parquet files) are correctly rebased during both reading and writing operations.
-        This is crucial for maintaining consistency and accuracy, especially when dealing with timestamp data across different systems or time zones.
-        Similarly, configuring "spark.sql.parquet.datetimeRebaseModeInRead" and "spark.sql.legacy.parquet.datetimeRebaseModeInWrite" to "CORRECTED" ensures correct handling of datetime values during Parquet file operations.
-        By specifying this rebasing mode, potential discrepancies or errors related to datetime representations are mitigated, resulting in more reliable data processing and analysis workflows.
-        """
-        self._spark.conf.set("spark.sql.parquet.vorder.enabled", "true")
-
-        self._spark.conf.set("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED")
-        self._spark.conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
-        self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED")
-        self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+        s = super().__str__(self)
+        s += f", mlv_suffix: {self._mlv_suffix}"
+        return s
 
     def ingest(self) -> DataFrame:
         """Ingests data into the silver layer by using the an insert only strategy.
@@ -359,7 +144,10 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         # 1.
         df_bronze, df_silver, has_schema_changed = self._generate_dataframes()
 
-        target_columns_ordered = self._get_columns_ordered(df_bronze)
+        target_columns_ordered = self._get_columns_ordered(df_bronze, last_columns=[
+            self._row_load_dts_column,
+            self._row_delete_dts_column
+        ])
 
         do_overwrite = (
             df_silver is None or
@@ -409,27 +197,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
         self._manage_historized_mlv(has_schema_changed, target_columns_ordered)
         return df_data_to_insert
 
-    def read_silver_df(self) -> DataFrame:
-        """Reads the silver layer DataFrame.
-
-        Returns:
-            DataFrame: The silver layer DataFrame.
-        """
-        if self._is_testing_mock:
-            if not os.path.exists(get_mock_table_path(self._dest_table)):
-                return None
-        elif not self._spark.catalog.tableExists(self._dest_table.table_path):
-            return None
-
-        sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-
-        if self._is_testing_mock:
-            df = self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
-            return df
-
-        df = self._spark.sql(sql_select_destination)
-        return df
-
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame, bool]:
         """Generates the bronze and silver DataFrames and detects schema changes.
 
@@ -453,38 +220,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             df_bronze = F.broadcast(df_bronze)
 
         return df_bronze, df_silver, has_schema_changed
-
-    def _compare_condition(
-        self,
-        df_bronze: DataFrame,
-        df_silver: DataFrame,
-        columns_to_compare: list[str]
-    ) -> tuple[F.Column, F.Column]:
-        """Compares the specified columns of the bronze and silver DataFrames.
-
-        Args:
-            df_bronze (DataFrame): The bronze DataFrame.
-            df_silver (DataFrame): The silver DataFrame.
-            columns_to_compare (list[str]): The columns to compare.
-
-        Returns:
-            tuple[F.Column, F.Column]: The equality and inequality conditions.
-        """
-        eq_condition = (
-            (df_bronze[columns_to_compare[0]] == df_silver[columns_to_compare[0]]) |
-            (df_bronze[columns_to_compare[0]].isNull() & df_silver[columns_to_compare[0]].isNull())
-        )
-
-        if len(columns_to_compare) == 1:
-            return eq_condition, ~eq_condition
-
-        for compare_column in columns_to_compare[1:]:
-            eq_condition &= (
-                (df_bronze[compare_column] == df_silver[compare_column]) |
-                (df_bronze[compare_column].isNull() & df_silver[compare_column].isNull())
-            )
-
-        return eq_condition, ~eq_condition
 
     def _updated_filter(
         self,
@@ -553,30 +288,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
                                       .select(df_bronze["*"])
 
         return df_updated_records
-
-    def _filter_expired_records(
-        self,
-        df_joined: DataFrame,
-        df_silver: DataFrame,
-        updated_filter: F.Column
-    ) -> DataFrame:
-        """Filters expired records from the joined DataFrame.
-
-        Args:
-            df_joined (DataFrame): The outer joined DataFrame.
-            df_silver (DataFrame): The silver DataFrame.
-            updated_filter (F.Column): The filter condition for updated records.
-
-        Returns:
-            DataFrame: The filtered DataFrame containing expired records.
-        """
-
-        # Select not matching silver columns
-        df_expired_records = df_joined.filter(updated_filter) \
-                                      .select(df_silver["*"]) \
-                                      .withColumn(self._row_delete_dts_column, F.lit(None).cast("timestamp"))
-
-        return df_expired_records
 
     def _filter_deleted_records(
         self,
@@ -690,93 +401,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
 
         return df
 
-    def _add_missing_columns(self, df_target: DataFrame, df_source: DataFrame) -> DataFrame:
-        """Adds missing columns from the source DataFrame to the target DataFrame.
-
-        Args:
-            df_target (DataFrame): The target DataFrame to which missing columns will be added.
-            df_source (DataFrame): The source DataFrame from which missing columns will be taken.
-
-        Returns:
-            DataFrame: The target DataFrame with missing columns added.
-        """
-        missing_columns = [
-            missing_column
-            for missing_column in df_source.columns
-            if missing_column not in df_target.columns
-        ]
-
-        for missing_column in missing_columns:
-            df_target = df_target.withColumn(missing_column, F.lit(None))
-
-        return df_target
-
-    def _get_columns_to_compare(self, df: DataFrame) -> list[str]:
-        """Get the columns to compare in the DataFrame.
-
-        Args:
-            df (DataFrame): The DataFrame to analyze.
-
-        Returns:
-            list[str]: The columns to compare.
-        """
-        if (
-            isinstance(self._include_comparing_columns, list) and
-            len(self._include_comparing_columns) >= 1
-        ):
-            self._validate_include_comparing_columns(df)
-            return self._include_comparing_columns
-
-        comparison_columns = [
-            column
-            for column in df.columns
-            if column not in self._exclude_comparing_columns
-        ]
-
-        return comparison_columns
-
-    def _get_columns_ordered(self, df: DataFrame) -> list[str]:
-        """Get the columns in the desired order for processing.
-
-        Args:
-            df (DataFrame): The DataFrame to analyze.
-
-        Returns:
-            list[str]: The columns in the desired order.
-        """
-        all_columns = [
-            column
-            for column in df.columns
-            if column not in self._dw_columns
-        ]
-
-        return [self._pk_column_name, self._nk_column_name] + all_columns + [
-            self._row_load_dts_column,
-            self._row_delete_dts_column
-        ]
-
-    def _apply_transformations(self, df: DataFrame) -> DataFrame:
-        """Applies transformations to the DataFrame.
-        Uses the source table name to find the appropriate transformation function.
-        Or uses a wildcard transformation function if available.
-
-        Args:
-            df (DataFrame): The DataFrame to transform.
-
-        Returns:
-            DataFrame: The transformed DataFrame.
-        """
-        transform_fn: Callable = self._transformations.get(self._src_table.table)
-        transform_fn_all: Callable = self._transformations.get("*")
-
-        if transform_fn_all is not None:
-            df = transform_fn_all(df, self)
-
-        if transform_fn is None:
-            return df
-
-        return transform_fn(df, self)
-
     def _manage_historized_mlv(
             self,
             has_schema_changed: bool,
@@ -793,7 +417,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             return
 
         self._create_or_replace_historized_mlv(has_schema_changed, target_columns_ordered)
-        self._refresh_historized_mlv()
+        self._mlv.refresh(full_refresh=False)
 
     def _create_or_replace_historized_mlv(
             self,
@@ -810,7 +434,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             logger.info("MLV: No schema change detected.")
             return
 
-        self._drop_historized_mlv()
+        self._mlv.drop()
         self._create_historized_mlv(target_columns_ordered)
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:
@@ -832,10 +456,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
             constant_column_str
         )
 
-        if self._is_testing_mock:
-            return
-
-        self._spark.sql(self._mlv_code)
+        self._mlv.create(self._mlv_code)
 
     def _generate_mlv_code(
             self,
@@ -845,8 +466,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionService):
     ) -> str:
         """Generates the SQL code for creating a materialized lake view (MLV)."""
         return f"""
-CREATE MATERIALIZED LAKE VIEW {self.mlv_name}
-AS
 WITH cte_mlv AS (
     SELECT
         {silver_columns_ordered_str}
@@ -917,32 +536,6 @@ FROM cte_mlv
                 break
         return constant_column_str
 
-    def _drop_historized_mlv(self) -> None:
-        """Drops the historized materialized lake view (MLV)."""
-        if not self._is_create_hist_mlv:
-            return
-
-        drop_mlv_sql = f"DROP MATERIALIZED LAKE VIEW IF EXISTS {self.mlv_name}"
-        logger.info(drop_mlv_sql)
-
-        if self._is_testing_mock:
-            return
-
-        self._spark.sql(drop_mlv_sql)
-
-    def _refresh_historized_mlv(self) -> None:
-        """Refreshes the historized materialized lake view (MLV)."""
-        if not self._is_create_hist_mlv:
-            return
-
-        refresh_mlv_sql = f"REFRESH MATERIALIZED LAKE VIEW {self.mlv_name}"
-        logger.info(refresh_mlv_sql)
-
-        if self._is_testing_mock:
-            return
-
-        self._spark.sql(refresh_mlv_sql)
-
     def _has_schema_change(self, df_bronze: DataFrame, df_silver: DataFrame) -> bool:
         """Check if the schema of the bronze DataFrame is different from the silver DataFrame.
 
@@ -956,25 +549,6 @@ FROM cte_mlv
         if df_silver is None:
             return True
         return set(df_bronze.columns) != set(df_silver.columns)
-
-    def _write_df(self, df: DataFrame, write_mode: str) -> None:
-        """Writes the DataFrame to the specified location.
-
-        Args:
-            df (DataFrame): The DataFrame to write.
-            write_mode (str): The write mode (e.g., "overwrite", "append").
-        """
-        writer = df.write \
-            .format("delta") \
-            .mode(write_mode) \
-            .option("mergeSchema", "true") \
-            .partitionBy(*self._partition_by)
-
-        if self._is_testing_mock:
-            writer.save(get_mock_table_path(self._dest_table))
-            return
-
-        writer.saveAsTable(self._dest_table.table_path)
 
 
 etl = SilverIngestionInsertOnlyService()

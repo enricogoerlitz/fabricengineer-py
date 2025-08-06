@@ -44,13 +44,14 @@ def _import_module_insertonly(base_path: str) -> str:
     base_module = _import_transform_silver_base_module(base_path)
     utils_module = _import_transform_silver_utils_module(base_path)
     insertonly_module = _import_transform_silver_insertonly_module(base_path)
+    mlv_module = _import_transform_mlv_module(base_path)
 
     imports = """
 import os
 import logging
 
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from uuid import uuid4
@@ -70,6 +71,7 @@ from pyspark.sql import (
         lakehouse_module,
         utils_module,
         base_module,
+        mlv_module,
         insertonly_module
     ])
 

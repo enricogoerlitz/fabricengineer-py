@@ -103,6 +103,71 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
         self._row_delete_dts_column = row_delete_dts_column
         self._row_load_dts_column = row_load_dts_column
 
+        self._validate_parameters()
+        self._set_spark_config()
+
+        self._exclude_comparing_columns = set(
+            [self._pk_column_name]
+            + self._nk_columns
+            + self._dw_columns
+            + self._exclude_comparing_columns
+            + [column.name for column in self._constant_columns]
+        )
+
+        self._spark.catalog.clearCache()
+
+    def _validate_parameters(self) -> None:
+        """Validates the in constructor setted parameters, so the etl can run.
+
+        Raises:
+            ValueError: when a valueerror occurs
+            TypeError: when a typerror occurs
+            Exception: generic exception
+        """
+        if self._df_bronze is not None:
+            self._validate_param_isinstance(self._df_bronze, "df_bronze", DataFrame)
+
+        self._validate_param_isinstance(self._spark, "spark", SparkSession)
+        self._validate_param_isinstance(self._historize, "historize", bool)
+        self._validate_param_isinstance(self._is_create_hist_mlv, "create_historized_mlv", bool)
+        self._validate_param_isinstance(self._is_delta_load, "is_delta_load", bool)
+        self._validate_param_isinstance(self._delta_load_use_broadcast, "delta_load_use_broadcast", bool)
+        self._validate_param_isinstance(self._transformations, "transformations", dict)
+        self._validate_param_isinstance(self._src_table, "src_table", LakehouseTable)
+        self._validate_param_isinstance(self._dest_table, "dest_table", LakehouseTable)
+        self._validate_param_isinstance(self._include_comparing_columns, "include_columns_from_comparing", list)
+        self._validate_param_isinstance(self._exclude_comparing_columns, "exclude_columns_from_comparing", list)
+        self._validate_param_isinstance(self._partition_by, "partition_by_columns", list)
+        self._validate_param_isinstance(self._pk_column_name, "pk_column", str)
+        self._validate_param_isinstance(self._nk_column_name, "nk_column", str)
+        self._validate_param_isinstance(self._nk_columns, "nk_columns", list)
+        self._validate_param_isinstance(self._nk_column_concate_str, "nk_column_concate_str", str)
+        self._validate_param_isinstance(self._constant_columns, "constant_columns", list)
+        self._validate_param_isinstance(self._row_load_dts_column, "row_load_dts_column", str)
+        self._validate_param_isinstance(self._row_hist_number_column, "row_hist_number_column", str)
+        self._validate_param_isinstance(self._row_is_current_column, "row_is_current_column", str)
+        self._validate_param_isinstance(self._row_update_dts_column, "row_update_dts_column", str)
+        self._validate_param_isinstance(self._row_delete_dts_column, "row_delete_dts_column", str)
+
+        self._validate_min_length(self._pk_column_name, "pk_column", 2)
+        self._validate_min_length(self._nk_column_name, "nk_column", 2)
+        self._validate_min_length(self._src_table.lakehouse, "src_lakehouse", 3)
+        self._validate_min_length(self._src_table.schema, "src_schema", 1)
+        self._validate_min_length(self._src_table.table, "src_tablename", 3)
+        self._validate_min_length(self._dest_table.lakehouse, "dest_lakehouse", 3)
+        self._validate_min_length(self._dest_table.schema, "dest_schema", 1)
+        self._validate_min_length(self._dest_table.table, "dest_tablename", 3)
+        self._validate_min_length(self._nk_columns, "nk_columns", 1)
+        self._validate_min_length(self._nk_column_concate_str, "nk_column_concate_str", 1)
+        self._validate_min_length(self._row_load_dts_column, "row_load_dts_column", 3)
+        self._validate_min_length(self._row_hist_number_column, "row_hist_number_column", 3)
+        self._validate_min_length(self._row_is_current_column, "row_is_current_column", 3)
+        self._validate_min_length(self._row_update_dts_column, "row_update_dts_column", 3)
+        self._validate_min_length(self._row_delete_dts_column, "row_delete_dts_column", 3)
+
+        self._validate_transformations()
+        self._validate_constant_columns()
+
     def read_silver_df(self) -> DataFrame:
         """Reads the silver layer DataFrame.
 
@@ -263,31 +328,6 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
 
         return eq_condition, ~eq_condition
 
-    def __str__(self) -> str:
-        if not self._is_initialized:
-            return super.__str__(self)
-
-        return str({
-            "historize": self._historize,
-            "is_delta_load": self._is_delta_load,
-            "delta_load_use_broadcast": self._delta_load_use_broadcast,
-            "src_table_path": self._src_table.table_path,
-            "dist_table_path": self._dest_table.table_path,
-            "nk_columns": self._nk_columns,
-            "include_comparing_columns": self._include_comparing_columns,
-            "exclude_comparing_columns": self._exclude_comparing_columns,
-            "transformations": self._transformations,
-            "constant_columns": self._constant_columns,
-            "partition_by": self._partition_by,
-            "pk_column": self._pk_column_name,
-            "nk_column": self._nk_column_name,
-            "nk_column_concate_str": self._nk_column_concate_str,
-            "row_update_dts_column": self._row_update_dts_column,
-            "row_delete_dts_column": self._row_delete_dts_column,
-            "ldts_column": self._row_load_dts_column,
-            "dw_columns": self._dw_columns
-        })
-
     def _validate_transformations(self) -> None:
         """Validates the transformation functions.
 
@@ -437,3 +477,28 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
         self._spark.conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED")
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+
+    def __str__(self) -> str:
+        if not self._is_initialized:
+            return super().__str__(self)
+
+        return str({
+            "historize": self._historize,
+            "is_delta_load": self._is_delta_load,
+            "delta_load_use_broadcast": self._delta_load_use_broadcast,
+            "src_table_path": self._src_table.table_path,
+            "dist_table_path": self._dest_table.table_path,
+            "nk_columns": self._nk_columns,
+            "include_comparing_columns": self._include_comparing_columns,
+            "exclude_comparing_columns": self._exclude_comparing_columns,
+            "transformations": self._transformations,
+            "constant_columns": self._constant_columns,
+            "partition_by": self._partition_by,
+            "pk_column": self._pk_column_name,
+            "nk_column": self._nk_column_name,
+            "nk_column_concate_str": self._nk_column_concate_str,
+            "row_load_dts_column": self._row_load_dts_column,
+            "row_update_dts_column": self._row_update_dts_column,
+            "row_delete_dts_column": self._row_delete_dts_column,
+            "dw_columns": self._dw_columns
+        })
