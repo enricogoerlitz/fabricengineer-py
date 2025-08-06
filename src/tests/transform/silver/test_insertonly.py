@@ -1720,11 +1720,11 @@ SELECT
 `name`,
 `created_at`,
 `updated_at`,
-`ROW_IS_CURRENT`,
-`ROW_HIST_NUMBER`,
+`ROW_LOAD_DTS`,
 `ROW_UPDATE_DTS`,
 `ROW_DELETE_DTS`,
-`ROW_LOAD_DTS`
+`ROW_IS_CURRENT`,
+`ROW_HIST_NUMBER`
 """
 
     # Create initial test data
@@ -1770,11 +1770,11 @@ SELECT
 `ncol`,
 `INSTANCE`,
 `DATA`,
-`ROW_IS_CURRENT`,
-`ROW_HIST_NUMBER`,
+`ROW_LOAD_DTS`,
 `ROW_UPDATE_DTS`,
 `ROW_DELETE_DTS`,
-`ROW_LOAD_DTS`
+`ROW_IS_CURRENT`,
+`ROW_HIST_NUMBER`
 FROM cte_mlv
 """
     # Add constant columns for schema evolution test

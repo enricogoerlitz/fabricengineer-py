@@ -388,16 +388,12 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
 
         window_spec = Window.partitionBy(self._nk_columns).orderBy(df[self._row_load_dts_column].desc())
         df_with_rownum = df.withColumn("ROW_NUMBER", F.row_number().over(window_spec))
-        # df = df_with_rownum.filter(df_with_rownum["ROW_NUMBER"] == 1).select(return_columns)
 
-        # ------ NEW ------
         current_record_filter = (
-            # (df_with_rownum["ROW_NUMBER"] == 1) &
             (F.col("ROW_NUMBER") == 1) &
             (F.col(self._row_delete_dts_column).isNull())
         )
         df = df_with_rownum.filter(current_record_filter).select(return_columns)
-        # ------ NEW ------
 
         return df
 
@@ -504,11 +500,11 @@ FROM cte_mlv
             str: A string representation of the final column order for the MLV.
         """
         last_columns_ordered = [
-            self._row_is_current_column,
-            self._row_hist_number_column,
+            self._row_load_dts_column,
             self._row_update_dts_column,
             self._row_delete_dts_column,
-            self._row_load_dts_column
+            self._row_is_current_column,
+            self._row_hist_number_column
         ]
         final_ordered_columns = [
             column
