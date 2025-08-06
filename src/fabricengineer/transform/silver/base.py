@@ -168,7 +168,7 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
         self._validate_transformations()
         self._validate_constant_columns()
 
-    def read_silver_df(self) -> DataFrame:
+    def read_silver_df(self, fformat: str = "delta") -> DataFrame:
         """Reads the silver layer DataFrame.
 
         Returns:
@@ -183,7 +183,7 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
         sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
 
         if self._is_testing_mock:
-            df = self._spark.read.format("delta").load(get_mock_table_path(self._dest_table))
+            df = self._spark.read.format(fformat).load(get_mock_table_path(self._dest_table))
             return df
 
         df = self._spark.sql(sql_select_destination)

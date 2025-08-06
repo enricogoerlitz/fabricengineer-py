@@ -360,18 +360,14 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
         Returns:
             DataFrame: The silver DataFrame.
         """
+        fformat = "delta" if not self._is_testing_mock else "parquet"
         if self._is_testing_mock:
             if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
         elif not self._spark.catalog.tableExists(self._dest_table.table_path):
             return None
 
-        sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = None
-        if self._is_testing_mock:
-            df = self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
-        elif self._spark.catalog.tableExists(self._dest_table.table_path):
-            df = self._spark.sql(sql_select_destination)
+        df = self.read_silver_df(fformat=fformat)
 
         self._validate_nk_columns_in_df(df)
 

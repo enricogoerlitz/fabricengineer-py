@@ -2,6 +2,7 @@ import os
 
 from datetime import datetime
 
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 
@@ -73,7 +74,6 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
             nk_column_name=nk_column_name,
             nk_column_concate_str=nk_column_concate_str,
             row_is_current_column=row_is_current_column,
-            row_hist_number_column=None,
             row_update_dts_column=row_update_dts_column,
             row_delete_dts_column=row_delete_dts_column,
             row_load_dts_column=row_load_dts_column,
@@ -91,7 +91,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
     def _validate_scd2_params(self) -> None:
         pass
 
-    def ingest(self):
+    def ingest(self) -> None:
         if not self._is_initialized:
             raise RuntimeError("The SilverIngestionInsertOnlyService is not initialized. Call the init method first.")
 
@@ -141,6 +141,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
                                     .dropDuplicates(["PK"])
 
         self._write_df(df_new_data, "append")
+
         # 5.
         df_expired_records = self._filter_expired_records(df_joined, df_silver, updated_filter_condition)
 
@@ -154,19 +155,6 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         df_merge_into_records = df_expired_records.unionByName(df_deleted_records) \
                                                   .select(target_columns_ordered)
         self._exec_merge_into(df_merge_into_records, "df_merge_into_records")
-
-        # ---- OLD CODE (works) ----
-        # # 5.
-        # df_updated_records = self._filter_updated_records(df_joined, df_silver, updated_filter_condition)
-        # self._exec_merge_into(df_updated_records, "df_updated_records")
-
-        # # 6.
-        # if self._is_delta_load:
-        #     return
-
-        # df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver)
-        # self._exec_merge_into(df_deleted_records, "df_deleted_records")
-        # ---- OLD CODE ----
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
         df_bronze = self._create_bronze_df()
@@ -213,7 +201,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         # Select not matching silver columns
         df_expired_records = df_joined.filter(updated_filter) \
                                       .select(df_silver["*"]) \
-                                      .withColumn(self._row_update_dts_column, self._current_timestamp) \
+                                      .withColumn(self._row_update_dts_column, F.lit(self._current_timestamp)) \
                                       .withColumn(self._row_delete_dts_column, F.lit(None).cast("timestamp")) \
                                       .withColumn(self._row_is_current_column, F.lit(0))
 
@@ -222,8 +210,8 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
     def _filter_deleted_records(self, df_joined: DataFrame, df_bronze: DataFrame, df_silver: DataFrame) -> DataFrame:
         df_deleted_records = df_joined.filter(df_bronze[self._nk_column_name].isNull()) \
                                       .select(df_silver["*"]) \
-                                      .withColumn(self._row_update_dts_column, self._current_timestamp) \
-                                      .withColumn(self._row_delete_dts_column, self._current_timestamp) \
+                                      .withColumn(self._row_update_dts_column, F.lit(self._current_timestamp)) \
+                                      .withColumn(self._row_delete_dts_column, F.lit(self._current_timestamp)) \
                                       .withColumn(self._row_is_current_column, F.lit(0))
 
         return df_deleted_records
@@ -259,12 +247,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         elif not self._spark.catalog.tableExists(self._dest_table.table_path):
             return None
 
-        sql_select_destination = f"SELECT * FROM {self._dest_table.table_path}"
-        df = None
-        if self._is_testing_mock:
-            df = self._spark.read.format("parquet").load(get_mock_table_path(self._dest_table))
-        elif self._spark.catalog.tableExists(self._dest_table.table_path):
-            df = self._spark.sql(sql_select_destination)
+        df = self.read_silver_df()
 
         self._validate_nk_columns_in_df(df)
 
@@ -280,17 +263,26 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df
 
     def _exec_merge_into(self, df_source: DataFrame, view_name: str) -> None:
-        df_source.createOrReplaceTempView(view_name)
-        self._spark.sql(f"""
-            MERGE INTO {self._dest_table.table_path} AS target
-            USING {view_name} AS source
-            ON target.{self._pk_column_name} = source.{self._pk_column_name}
-            WHEN MATCHED THEN
-            UPDATE SET
-                {self._row_update_dts_column} = source.{self._row_update_dts_column},
-                {self._row_delete_dts_column} = source.{self._row_delete_dts_column},
-                {self._row_is_current_column} = source.{self._row_is_current_column}
-        """)
+        # Zielpfad oder Tabellennamen auflösen
+        if self._is_testing_mock:
+            target_path = get_mock_table_path(self._dest_table)
+            delta_table = DeltaTable.forPath(self._spark, target_path)
+        else:
+            table_name = self._dest_table.table_path
+            delta_table = DeltaTable.forName(self._spark, table_name)
+
+        # Merge-Logik ausführen
+        delta_table.alias("target") \
+            .merge(
+                df_source.alias("source"),
+                f"target.{self._pk_column_name} = source.{self._pk_column_name}"
+            ) \
+            .whenMatchedUpdate(set={
+                self._row_update_dts_column: f"source.{self._row_update_dts_column}",
+                self._row_delete_dts_column: f"source.{self._row_delete_dts_column}",
+                self._row_is_current_column: f"source.{self._row_is_current_column}"
+            }) \
+            .execute()
 
 
 etl = SilverIngestionSCD2Service()
