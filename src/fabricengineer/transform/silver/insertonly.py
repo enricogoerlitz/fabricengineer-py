@@ -25,6 +25,7 @@ from fabricengineer.logging.logger import logger
 class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
     _is_initialized: bool = False
     _mlv_code: str | None = None
+    _mlv_suffix: str = "_h"
 
     def init(
         self,

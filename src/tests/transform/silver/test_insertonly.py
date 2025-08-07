@@ -1826,3 +1826,12 @@ FROM cte_mlv
 
     # Validate that MLV code was updated to include all new columns
     assert expected_mlv_code in etl.mlv_code
+
+
+def test_str(spark_: SparkSession) -> None:
+    etl = SilverIngestionInsertOnlyService()
+    assert isinstance(str(etl), str)
+
+    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
+    etl.init(**etl_kwargs)
+    assert isinstance(str(etl), str)

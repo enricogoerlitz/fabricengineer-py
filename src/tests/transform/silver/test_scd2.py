@@ -1614,3 +1614,12 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
     # PHASE 4: Validate data distribution across constant value instances
     assert silver_df_3.filter(F.col("INSTANCE") == "europe").count() == 2  # Original europe data
     assert silver_df_3.filter(F.col("INSTANCE") == "asia").count() == 4    # Asia data: original (2) + new (2)
+
+
+def test_str(spark_: SparkSession) -> None:
+    etl = SilverIngestionSCD2Service()
+    assert isinstance(str(etl), str)
+
+    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
+    etl.init(**etl_kwargs)
+    assert isinstance(str(etl), str)
