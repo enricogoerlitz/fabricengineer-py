@@ -480,7 +480,7 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
 
     def __str__(self) -> str:
         if not self._is_initialized:
-            return super().__str__(self)
+            return super().__str__()
 
         return str({
             "historize": self._historize,

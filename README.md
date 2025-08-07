@@ -230,7 +230,7 @@ assert code.startswith("import requests")
 
 # Cell 2
 mlv_module = import_module("transform.mlv", VERSION)
-scd2_module = import_module("transform.silver.sdc2", VERSION)
+scd2_module = import_module("transform.silver.scd2", VERSION)
 insertonly_module = import_module("transform.silver.insertonly", VERSION)
 
 # Cell 3 - Use mlv module

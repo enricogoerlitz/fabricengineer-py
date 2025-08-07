@@ -123,7 +123,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
             self._validate_min_length(self._mlv_suffix, "mlv_suffix", 1)
 
     def __str__(self) -> str:
-        s = super().__str__(self)
+        s = super().__str__()
         s += f", mlv_suffix: {self._mlv_suffix}"
         return s
 
