@@ -7,7 +7,7 @@ def import_module(
         name: Literal[
             "transform.mlv",
             "transform.silver.insertonly",
-            "transform.silver.sdc2"
+            "transform.silver.scd2"
         ],
         version: str
 ) -> str:
@@ -28,7 +28,7 @@ def import_module(
     module_map = {
         "transform.mlv": _import_module_mlv,
         "transform.silver.insertonly": _import_module_insertonly,
-        "transform.silver.sdc2": _import_module_sdc2
+        "transform.silver.scd2": _import_module_scd2
     }
 
     if name not in module_map:
@@ -78,9 +78,43 @@ from pyspark.sql import (
     return code
 
 
-def _import_module_sdc2(base_path: str) -> str:
-    """Imports the sdc2 module from the specified base path."""
-    pass
+def _import_module_scd2(base_path: str) -> str:
+    """Imports the scd2 module from the specified base path."""
+    scd2_module = _import_transform_scd2_module(base_path)
+    logger_module = _import_logging_logger_module(base_path)
+    lakehouse_module = _import_transform_lakehouse_module(base_path)
+    base_module = _import_transform_silver_base_module(base_path)
+    utils_module = _import_transform_silver_utils_module(base_path)
+
+    imports = """
+import os
+import logging
+
+from datetime import datetime
+from typing import Any, Callable
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from uuid import uuid4
+
+from pyspark.sql import (
+    SparkSession,
+    DataFrame,
+    functions as F,
+    types as T,
+    Window
+)
+""".strip()
+
+    code = "\n\n\n".join([
+        imports,
+        logger_module,
+        lakehouse_module,
+        utils_module,
+        base_module,
+        scd2_module
+    ])
+
+    return code
 
 
 def _import_module_mlv(base_path: str) -> str:
@@ -140,6 +174,12 @@ def _import_transform_silver_insertonly_module(base_path: str) -> str:
     """Imports the insertonly module from the transform silver directory."""
     insertonly_module = f"{base_path}/transform/silver/insertonly.py"
     return _fetch_module_content(insertonly_module)
+
+
+def _import_transform_scd2_module(base_path: str) -> str:
+    """Imports the scd2 module from the transform directory."""
+    scd2_module = f"{base_path}/transform/silver/scd2.py"
+    return _fetch_module_content(scd2_module)
 
 
 def _fetch_module_content(module_path: str) -> str:
