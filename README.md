@@ -222,14 +222,14 @@ import requests
 
 VERSION = "0.1.0"
 url = f"https://raw.githubusercontent.com/enricogoerlitz/fabricengineer-py/refs/tags/{VERSION}/src/fabricengineer/import_module/import_module.py"
-resp = requests.get(module_path)
-code = code[1].strip()
+resp = requests.get(url)
+code = resp.text
 
 exec(code, globals())  # This provides the 'import_module' function
-print(code)
+assert code.startswith("import requests")
 
 # Cell 2
-mlv_module = import_module("transform.silver.mlv")
+mlv_module = import_module("transform.mlv", VERSION)
 scd2_module = import_module("transform.silver.sdc2", VERSION)
 insertonly_module = import_module("transform.silver.insertonly", VERSION)
 

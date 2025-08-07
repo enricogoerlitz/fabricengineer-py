@@ -5,7 +5,7 @@ from typing import Literal
 
 def import_module(
         name: Literal[
-            "transform.silver.mlv",
+            "transform.mlv",
             "transform.silver.insertonly",
             "transform.silver.sdc2"
         ],
@@ -26,7 +26,7 @@ def import_module(
     base_path = f"https://raw.githubusercontent.com/enricogoerlitz/fabricengineer-py/refs/tags/{version}/src/fabricengineer"
 
     module_map = {
-        "transform.silver.mlv": _import_module_mlv,
+        "transform.mlv": _import_module_mlv,
         "transform.silver.insertonly": _import_module_insertonly,
         "transform.silver.sdc2": _import_module_sdc2
     }
@@ -90,7 +90,6 @@ def _import_module_mlv(base_path: str) -> str:
     imports = """
 from typing import Any
 from pyspark.sql import DataFrame, SparkSession
-from fabricengineer.logging.logger import logger
 """.strip()
 
     code = "\n\n\n".join([
