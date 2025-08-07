@@ -23,7 +23,7 @@ class BaseSilverIngestionService(ABC):
     def init(self, **kwargs): pass
 
     @abstractmethod
-    def ingest(self, **kwargs): pass
+    def run(self, **kwargs): pass
 
     @abstractmethod
     def read_silver_df(self) -> DataFrame: pass
@@ -43,7 +43,7 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
     _is_initialized: bool = False
 
     @abstractmethod
-    def ingest(self, **kwargs): pass
+    def run(self, **kwargs): pass
 
     def init(
         self,

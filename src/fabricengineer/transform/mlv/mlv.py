@@ -21,7 +21,7 @@ class MaterializedLakeView:
         table_suffix: str = "_mlv",
         spark_: SparkSession = None,
         notebookutils_: Any = None,
-        is_testing_mock: bool = False
+        **kwargs
     ) -> None:
         self.init(
             lakehouse=lakehouse,
@@ -30,7 +30,7 @@ class MaterializedLakeView:
             table_suffix=table_suffix,
             spark_=spark_,
             notebookutils_=notebookutils_,
-            is_testing_mock=is_testing_mock
+            is_testing_mock=kwargs.get("is_testing_mock", False)
         )
 
     def init(
@@ -41,7 +41,7 @@ class MaterializedLakeView:
         table_suffix: str = "_mlv",
         spark_: SparkSession = None,
         notebookutils_: Any = None,
-        is_testing_mock: bool = False
+        **kwargs
     ) -> 'MaterializedLakeView':
         """Initializes the MaterializedLakeView instance.
 
@@ -61,7 +61,7 @@ class MaterializedLakeView:
         self._schema = schema
         self._table = table
         self._table_suffix = table_suffix
-        self._is_testing_mock = is_testing_mock
+        self._is_testing_mock = kwargs.get("is_testing_mock", False)
 
         # 'spark' and 'notebookutils' are available in Fabric notebook
         self._spark = self._get_init_spark(spark_)

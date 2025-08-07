@@ -423,7 +423,7 @@ def test_ingest(spark_: SparkSession) -> None:
         assert row["name"] == init_data[i].name
 
     # PHASE 1: Initial silver ingestion (first load)
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial ingestion results
@@ -440,7 +440,7 @@ def test_ingest(spark_: SparkSession) -> None:
         assert row["updated_at"] == expected_data[i].updated_at
 
     # PHASE 2: No-change ingestion (should detect no changes)
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify no changes detected (empty inserted_df)
@@ -479,7 +479,7 @@ def test_ingest(spark_: SparkSession) -> None:
           .read()
 
     # Execute ingestion after complex changes
-    etl.ingest()
+    etl.run()
     silver_df_3 = etl.read_silver_df()
 
     assert bronze.df.count() == init_count + len(new_data) - len(deleted_data_ids)
@@ -508,7 +508,7 @@ def test_ingest(spark_: SparkSession) -> None:
     assert deleted_count == len(deleted_data_ids)
 
     # PHASE 4: no changes again
-    etl.ingest()
+    etl.run()
     silver_df_4 = etl.read_silver_df()
 
     assert bronze.df.count() == init_count + len(new_data) - len(deleted_data_ids)
@@ -573,7 +573,7 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Perform initial ingestion to establish baseline
-    etl.ingest()
+    etl.run()
     silver_df = etl.read_silver_df()
 
     # Verify initial state - no new column exists yet
@@ -607,7 +607,7 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     )
 
     # 2. Perform second ingestion with new column present
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify schema evolution was handled correctly
@@ -672,7 +672,7 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion with column present
-    etl.ingest()
+    etl.run()
     silver_df = etl.read_silver_df()
 
     # Verify initial state - column exists everywhere
@@ -712,7 +712,7 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
           .read()
 
     # 2. Perform ingestion after column removal
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify column removal was handled correctly
@@ -784,7 +784,7 @@ def test_ingest_reactivating_deleted_values_in_source(
     bronze.write().read()
 
     # 1. Init silver ingestion - establish baseline
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial ingestion completed successfully
@@ -799,7 +799,7 @@ def test_ingest_reactivating_deleted_values_in_source(
           .read()
 
     # Perform ingestion after deletions
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify deletion handling
@@ -817,7 +817,7 @@ def test_ingest_reactivating_deleted_values_in_source(
           .read()
 
     # Perform ingestion after reactivation
-    etl.ingest()
+    etl.run()
     silver_df_3 = etl.read_silver_df()
 
     expected_data = update_expected_data(expected_data, reactivated_data, [])
@@ -899,7 +899,7 @@ def test_ingest_with_transformations(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 3: Execute ingestion with transformations
-    etl.ingest()
+    etl.run()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
@@ -963,7 +963,7 @@ def test_ingest_with_transformation_star(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 3: Execute ingestion with universal transformations
-    etl.ingest()
+    etl.run()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
@@ -1024,7 +1024,7 @@ def test_ingest_with_transformation_not_applied(
     bronze.write().read()
 
     # PHASE 3: Execute ingestion (transformation should not be applied)
-    etl.ingest()
+    etl.run()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
@@ -1078,7 +1078,7 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion baseline
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial state with all columns present
@@ -1107,7 +1107,7 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
     expected_data = update_expected_data(expected_data, new_data, updated_data[:1])
 
     # 2. Perform ingestion with selective comparison
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify selective comparison results
@@ -1167,7 +1167,7 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion baseline with excluded columns
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial state with all columns present
@@ -1196,7 +1196,7 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
     expected_data = update_expected_data(expected_data, new_data, updated_data[:1])
 
     # 2. Perform ingestion with column exclusion
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify column exclusion results
@@ -1256,7 +1256,7 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Initial full load to establish baseline
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial load completed successfully
@@ -1289,7 +1289,7 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
     expected_data = update_expected_data(expected_data, new_data, updated_data)
 
     # 2. Perform delta load ingestion
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # PHASE 3: Verify delta load results
@@ -1340,7 +1340,7 @@ def test_ingest_historize_false(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. First ingestion without historization
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify first ingestion
@@ -1349,7 +1349,7 @@ def test_ingest_historize_false(spark_: SparkSession) -> None:
 
     # PHASE 2: Test repeated ingestion without historization
     # 2. Second ingestion with same data (should reprocess everything)
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify that all records are processed again (no change detection)
@@ -1395,7 +1395,7 @@ def test_ingest_multiple_ids(spark_: SparkSession) -> None:
           .read()
 
     # 1. Perform ingestion with composite natural key
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion completed successfully
@@ -1448,7 +1448,7 @@ def test_ingest_custom_df_bronze(spark_: SparkSession) -> None:
     etl.init(**etl_kwargs)
 
     # PHASE 2: Execute ingestion using custom DataFrame
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify that no file I/O occurred (bronze data was not written to disk)
@@ -1502,7 +1502,7 @@ def test_ingest_partition_by_columns(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 2: Execute ingestion with partitioning
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion completed successfully
@@ -1556,7 +1556,7 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Initial ingestion with constant columns
-    etl.ingest()
+    etl.run()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion with constant columns
@@ -1581,7 +1581,7 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
     expected_data += init_data
 
     # 2. Ingest same data with different constant values
-    etl.ingest()
+    etl.run()
     silver_df_2 = etl.read_silver_df()
 
     # Verify different constant values create separate records
@@ -1605,7 +1605,7 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
           .read()
 
     # 3. Ingest new data for asia instance
-    etl.ingest()
+    etl.run()
     silver_df_3 = etl.read_silver_df()
 
     # Verify new data was added to correct instance

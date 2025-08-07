@@ -127,7 +127,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
         s += f", mlv_suffix: {self._mlv_suffix}"
         return s
 
-    def ingest(self) -> DataFrame:
+    def run(self) -> DataFrame:
         """Ingests data into the silver layer by using the an insert only strategy.
 
         Raises:

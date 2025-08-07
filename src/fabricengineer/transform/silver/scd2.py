@@ -91,7 +91,32 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
     def _validate_scd2_params(self) -> None:
         pass
 
-    def ingest(self) -> None:
+    def run(self) -> None:
+        """Ingest data from bronze to silver layer.
+        This method performs the following steps:
+        1. Create a DataFrame from the bronze layer.
+        2. Create a DataFrame from the silver layer.
+        3. If the silver layer is empty or we are not historizing, overwrite the silver layer with the bronze layer.
+        4. If the silver layer is not empty and we are historizing, perform the following steps:
+            a. Compare the bronze and silver DataFrames to find new and updated records.
+            b. Insert new records into the silver layer.
+            c. Update existing records in the silver layer with the new data from the bronze layer.
+            d. Set the ROW_UPDATE_DTS and ROW_IS_CURRENT columns for updated records.
+            e. Set the ROW_DELETE_DTS and ROW_IS_CURRENT columns for deleted records.
+        5. If the silver layer is not empty and we are not historizing, perform the following steps:
+            a. Compare the bronze and silver DataFrames to find new, updated, and deleted records.
+            b. Insert new records into the silver layer.
+            c. Update existing records in the silver layer with the new data from the bronze layer.
+            d. Set the ROW_UPDATE_DTS and ROW_IS_CURRENT columns for updated records.
+            e. Set the ROW_DELETE_DTS and ROW_IS_CURRENT columns for deleted records.
+        6. If the silver layer is not empty and we are performing a delta load, merge the expired and deleted records into the silver layer.
+
+        Raises:
+            RuntimeError: If the service is not initialized before calling this method.
+            ValueError: If the required columns are not present in the DataFrame.
+            TypeError: If the DataFrame is not of the expected type.
+            Exception: If any other error occurs during the ingestion process.
+        """
         if not self._is_initialized:
             raise RuntimeError("The SilverIngestionInsertOnlyService is not initialized. Call the init method first.")
 
@@ -132,7 +157,10 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         _, neq_condition = self._compare_condition(df_bronze, df_silver, columns_to_compare)
         updated_filter_condition = self._updated_filter(df_bronze, df_silver, neq_condition)
 
+        # New records
         df_new_records = self._filter_new_records(df_joined, df_bronze, df_silver)
+
+        # Updated records to insert (from bronze)
         df_updated_records = self._filter_updated_records(df_joined, df_bronze, updated_filter_condition)
 
         # 4.
@@ -143,21 +171,35 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         self._write_df(df_new_data, "append")
 
         # 5.
+        # Expired records are the records in silver layer, which was updated. Merge/Update them and
+        # add current timestamp to ROW_UPDATE_DTS and set ROW_IS_CURRENT to 0.
         df_expired_records = self._filter_expired_records(df_joined, df_silver, updated_filter_condition)
-        # df_reactivated_records = ... records, die auf delete gesetzt sind, aber wieder reaktiviert wurden: eigentlich einfach neu einfügen...
 
         # 6.
         if self._is_delta_load:
-            self._exec_merge_into(df_expired_records, "df_expired_records")
+            self._exec_merge_into(df_expired_records)
             return
 
         df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver)
 
         df_merge_into_records = df_expired_records.unionByName(df_deleted_records) \
                                                   .select(target_columns_ordered)
-        self._exec_merge_into(df_merge_into_records, "df_merge_into_records")
+        self._exec_merge_into(df_merge_into_records)
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
+        """Generates the bronze and silver DataFrames.
+        This method creates the bronze DataFrame from the source table and the silver DataFrame from the destination table.
+        If the silver DataFrame does not exist, it returns None for the silver DataFrame.
+        If the bronze DataFrame does not exist, it raises an error.
+        Raises:
+            RuntimeError: If the bronze DataFrame cannot be created.
+            ValueError: If the required columns are not present in the DataFrame.
+            TypeError: If the DataFrame is not of the expected type.
+            Exception: If any other error occurs during the ingestion process.
+
+        Returns:
+            tuple[DataFrame, DataFrame]: The bronze and silver DataFrames.
+        """
         df_bronze = self._create_bronze_df()
         df_bronze = self._apply_transformations(df_bronze)
 
@@ -175,6 +217,20 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df_bronze, df_silver
 
     def _updated_filter(self, df_bronze: DataFrame, df_silver: DataFrame, neq_condition):
+        """Generates the filter condition for updated records.
+        This method creates a filter condition that checks for updated records based on the non-key columns.
+        It checks if the non-key columns in the bronze DataFrame are not null, the non-key columns in the silver DataFrame are not null,
+        the ROW_IS_CURRENT column in the silver DataFrame is equal to 1, and the non-equal condition is met.
+        This filter condition is used to identify records that have been updated in the bronze DataFrame compared to the silver DataFrame.
+
+        Args:
+            df_bronze (DataFrame): The bronze DataFrame containing the source data.
+            df_silver (DataFrame): The silver DataFrame containing the target data.
+            neq_condition (Column): The non-equal condition to check for updates.
+
+        Returns:
+            Column: The filter condition for updated records.
+        """
         updated_filter = (
             (df_bronze[self._nk_column_name].isNotNull()) &
             (df_silver[self._nk_column_name].isNotNull()) &
@@ -185,6 +241,19 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return updated_filter
 
     def _filter_new_records(self, df_joined: DataFrame, df_bronze: DataFrame, df_silver: DataFrame) -> DataFrame:
+        """Filters new records from the joined DataFrame.
+        This method filters the joined DataFrame to find records that are new, meaning they do not exist in the silver DataFrame.
+        It checks if the NK column in the silver DataFrame is null, indicating that these records are not present in the silver layer.
+        The new records are selected from the bronze DataFrame, which contains the source data.
+
+        Args:
+            df_joined (DataFrame): The joined DataFrame containing all records.
+            df_bronze (DataFrame): The bronze DataFrame containing the source data.
+            df_silver (DataFrame): The silver DataFrame containing the target data.
+
+        Returns:
+            DataFrame: A DataFrame containing the new records.
+        """
         new_records_filter = (df_silver[self._nk_column_name].isNull())
         df_new_records = df_joined.filter(new_records_filter) \
                                   .select(df_bronze["*"])
@@ -192,6 +261,18 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df_new_records
 
     def _filter_updated_records(self, df_joined: DataFrame, df_bronze: DataFrame, updated_filter) -> DataFrame:
+        """Filters updated records from the joined DataFrame.
+        This method filters the joined DataFrame to find records that have been updated in the bronze DataFrame compared to the silver DataFrame.
+        It uses the updated filter condition to select records that have been modified.
+
+        Args:
+            df_joined (DataFrame): The joined DataFrame containing all records.
+            df_bronze (DataFrame): The bronze DataFrame containing the source data.
+            updated_filter (Column): The filter condition for updated records.
+
+        Returns:
+            DataFrame: A DataFrame containing the updated records.
+        """
         # Select not matching bronze columns
         df_updated_records = df_joined.filter(updated_filter) \
                                       .select(df_bronze["*"])
@@ -199,6 +280,20 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df_updated_records
 
     def _filter_expired_records(self, df_joined: DataFrame, df_silver: DataFrame, updated_filter) -> DataFrame:
+        """Filters expired records from the joined DataFrame.
+        This method filters the joined DataFrame to find records that have been updated in the silver DataFrame.
+        It selects records that match the updated filter condition and updates the ROW_UPDATE_DTS column with the current timestamp.
+        It also sets the ROW_DELETE_DTS column to None and the ROW_IS_CURRENT column to 0, indicating that these records are no longer current.
+        This is used to mark records in the silver layer as expired when they have been updated in the bronze layer.
+
+        Args:
+            df_joined (DataFrame): The joined DataFrame containing all records.
+            df_silver (DataFrame): The silver DataFrame containing the target data.
+            updated_filter (Column): The filter condition for updated records.
+
+        Returns:
+            DataFrame: A DataFrame containing the expired records.
+        """
         # Select not matching silver columns
         df_expired_records = df_joined.filter(updated_filter) \
                                       .select(df_silver["*"]) \
@@ -209,6 +304,21 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df_expired_records
 
     def _filter_deleted_records(self, df_joined: DataFrame, df_bronze: DataFrame, df_silver: DataFrame) -> DataFrame:
+        """Filters deleted records from the joined DataFrame.
+        This method filters the joined DataFrame to find records that exist in the silver DataFrame but do not exist in the bronze DataFrame.
+        It checks if the NK column in the bronze DataFrame is null, indicating that these records have been deleted.
+        The deleted records are selected from the silver DataFrame, which contains the target data.
+        It updates the ROW_UPDATE_DTS and ROW_DELETE_DTS columns with the current timestamp
+        and sets the ROW_IS_CURRENT column to 0, indicating that these records are no longer current.
+
+        Args:
+            df_joined (DataFrame): The joined DataFrame containing all records.
+            df_bronze (DataFrame): The bronze DataFrame containing the source data.
+            df_silver (DataFrame): The silver DataFrame containing the target data.
+
+        Returns:
+            DataFrame: A DataFrame containing the deleted records.
+        """
         df_deleted_records = df_joined.filter(df_bronze[self._nk_column_name].isNull()) \
                                       .select(df_silver["*"]) \
                                       .withColumn(self._row_update_dts_column, F.lit(self._current_timestamp)) \
@@ -218,6 +328,14 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df_deleted_records
 
     def _create_bronze_df(self) -> DataFrame:
+        """Creates the bronze DataFrame.
+        This method reads data from the source table and applies necessary transformations to create the bronze DataFrame.
+        It selects all columns from the source table, adds primary key (PK) and natural key (NK) columns,
+        and sets the row update, delete, and load timestamps.
+
+        Returns:
+            DataFrame: The bronze DataFrame containing the source data.
+        """
         sql_select_source = f"SELECT * FROM {self._src_table.table_path}"
         if isinstance(self._df_bronze, DataFrame):
             df = self._df_bronze
@@ -242,6 +360,14 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         return df
 
     def _create_silver_df(self) -> DataFrame:
+        """Creates the silver DataFrame.
+        This method reads data from the destination table and applies necessary transformations to create the silver DataFrame.
+        It filters the DataFrame to include only current records (ROW_IS_CURRENT = 1)
+        and ensures that the natural key (NK) columns are present.
+
+        Returns:
+            DataFrame: The silver DataFrame containing the target data.
+        """
         if self._is_testing_mock:
             if not os.path.exists(get_mock_table_path(self._dest_table)):
                 return None
@@ -264,8 +390,15 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
 
         return df
 
-    def _exec_merge_into(self, df_source: DataFrame, view_name: str) -> None:
-        # Zielpfad oder Tabellennamen auflösen
+    def _exec_merge_into(self, df_source: DataFrame) -> None:
+        """Executes the MERGE INTO statement.
+        This method merges the source DataFrame into the destination table using the Delta Lake MERGE INTO operation.
+        It matches records based on the primary key (PK) column and updates the ROW_UPDATE_DTS, ROW_DELETE_DTS, and ROW_IS_CURRENT columns.
+
+        Args:
+            df_source (DataFrame): The source DataFrame to merge.
+            view_name (str): The name of the view to merge into.
+        """
         if self._is_testing_mock:
             target_path = get_mock_table_path(self._dest_table)
             delta_table = DeltaTable.forPath(self._spark, target_path)
@@ -273,7 +406,6 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
             table_name = self._dest_table.table_path
             delta_table = DeltaTable.forName(self._spark, table_name)
 
-        # Merge-Logik ausführen
         delta_table.alias("target") \
             .merge(
                 df_source.alias("source"),
