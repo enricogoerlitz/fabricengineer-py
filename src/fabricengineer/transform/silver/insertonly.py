@@ -55,7 +55,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
         row_delete_dts_column: str = "ROW_DELETE_DTS",
         row_load_dts_column: str = "ROW_LOAD_DTS",
 
-        is_testing_mock: bool = False
+        **kwargs
     ) -> None:
         self._mlv_suffix = mlv_suffix
 
@@ -92,7 +92,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
             row_delete_dts_column=row_delete_dts_column,
             row_load_dts_column=row_load_dts_column,
 
-            is_testing_mock=is_testing_mock
+            is_testing_mock=kwargs.get("is_testing_mock", False)
         )
 
         self._validate_insertonly_params()

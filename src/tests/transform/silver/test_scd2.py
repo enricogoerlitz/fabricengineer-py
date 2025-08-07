@@ -1,8 +1,8 @@
 """
-Test module for SilverIngestionInsertOnlyService functionality.
+Test module for SilverIngestionSCD2Service functionality.
 
-This module contains comprehensive tests for the SilverIngestionInsertOnlyService class,
-which handles ETL operations for insert-only data ingestion from bronze to silver layer
+This module contains comprehensive tests for the SilverIngestionSCD2Service class,
+which handles ETL operations for slowly changing dimensions (SCD) type 2 data ingestion from bronze to silver layer
 in a lakehouse architecture. The tests cover various scenarios including:
 
 - Service initialization and parameter validation
@@ -12,16 +12,13 @@ in a lakehouse architecture. The tests cover various scenarios including:
 - Column filtering for comparison operations
 - Delta load processing
 - Historization features
-- Materialized Lake View (MLV) generation
 - Constant columns and partitioning
 
-Run tests with: pytest src/tests/transform/silver/test_insertonly.py -v
+Run tests with: pytest src/tests/transform/silver/test_scd2.py -v
 """
 
-from venv import logger
 import pytest
 
-from datetime import datetime
 from uuid import uuid4
 from pyspark.sql import (
     SparkSession,
@@ -33,9 +30,10 @@ from tests.transform.silver.utils import (
     BronzeDataFrameRecord,
     BronzeDataFrameDataGenerator
 )
+from fabricengineer.logging import logger
 from fabricengineer.transform.silver.utils import ConstantColumn
-from fabricengineer.transform.silver.insertonly import (
-    SilverIngestionInsertOnlyService
+from fabricengineer.transform.silver.scd2 import (
+    SilverIngestionSCD2Service
 )
 from fabricengineer.transform.lakehouse import LakehouseTable
 
@@ -58,7 +56,6 @@ default_etl_kwargs = {
     "historize": True,  # Enable historization of data changes
     "partition_by_columns": [],  # Columns for data partitioning
     "df_bronze": None,  # Custom bronze DataFrame (optional)
-    "create_historized_mlv": True,  # Create materialized lake view for history
     "nk_column_concate_str": "_",  # Separator for natural key concatenation
     "is_testing_mock": True  # Enable testing mock mode
 }
@@ -99,9 +96,29 @@ def get_default_etl_kwargs(spark_: SparkSession) -> dict:
     return kwargs
 
 
+def update_expected_data(
+    expected_data: list[BronzeDataFrameRecord],
+    new_data: list[BronzeDataFrameRecord],
+    update_data: list[BronzeDataFrameRecord]
+) -> list[BronzeDataFrameRecord]:
+    updated_data_dict = {record.id: record for record in update_data}
+    new_expected_data = [] + new_data
+    for record in expected_data:
+        new_expected_data.append(record)
+        if record.id in updated_data_dict.keys():
+            new_expected_data.append(updated_data_dict[record.id])
+
+    new_expected_data = sorted(
+        new_expected_data,
+        key=lambda r: (r.id, r.created_at)
+    )
+
+    return new_expected_data
+
+
 def test_init_etl(spark_: SparkSession) -> None:
     """
-    Test the initialization of SilverIngestionInsertOnlyService.
+    Test the initialization of SilverIngestionSCD2Service.
 
     This test verifies that the ETL service can be properly initialized
     with all required parameters and that all internal state is set correctly.
@@ -116,7 +133,7 @@ def test_init_etl(spark_: SparkSession) -> None:
         ConstantColumn(name="instance", value="VTSD", part_of_nk=True),
         ConstantColumn(name="other", value="column")
     ]
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
 
     # Initialize the service
     etl.init(**etl_kwargs)
@@ -139,7 +156,7 @@ def test_init_etl(spark_: SparkSession) -> None:
     # Verify comparison column configuration (includes automatic exclusions)
     expected_excluded_columns = set([
         "id", "PK", "NK", "ROW_DELETE_DTS", "ROW_LOAD_DTS",
-        "OTHER", "INSTANCE"
+        "ROW_IS_CURRENT", "ROW_UPDATE_DTS", "OTHER", "INSTANCE"
     ] + etl_kwargs["exclude_comparing_columns"])
     assert etl._exclude_comparing_columns == expected_excluded_columns
     assert etl._include_comparing_columns == etl_kwargs["include_comparing_columns"]
@@ -148,23 +165,16 @@ def test_init_etl(spark_: SparkSession) -> None:
     assert etl._historize == etl_kwargs["historize"]
     assert etl._partition_by == etl_kwargs["partition_by_columns"]
     assert etl._df_bronze is None
-    assert etl._is_create_hist_mlv == etl_kwargs["create_historized_mlv"]
     assert etl._is_testing_mock == etl_kwargs["is_testing_mock"]
 
-    # Verify MLV configuration
-    assert etl.mlv_code is None
-    expected_mlv_name = (
-        f"{etl._dest_table.lakehouse}.{etl._dest_table.schema}."
-        f"{etl._dest_table.table}_h"
-    )
-    assert etl.mlv_name == expected_mlv_name
-
     # Verify data warehouse columns are properly configured
-    assert len(etl._dw_columns) == 4
+    assert len(etl._dw_columns) == 6
     assert etl._dw_columns[0] == etl._pk_column_name
     assert etl._dw_columns[1] == etl._nk_column_name
-    assert etl._dw_columns[2] == etl._row_delete_dts_column
-    assert etl._dw_columns[3] == etl._row_load_dts_column
+    assert etl._dw_columns[2] == etl._row_is_current_column
+    assert etl._dw_columns[3] == etl._row_update_dts_column
+    assert etl._dw_columns[4] == etl._row_delete_dts_column
+    assert etl._dw_columns[5] == etl._row_load_dts_column
 
 
 def test_init_etl_fail_params(spark_: SparkSession) -> None:
@@ -179,7 +189,7 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
         spark_: SparkSession fixture for testing
     """
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
 
     # Test type validation for DataFrame parameters
     with pytest.raises(TypeError, match=f"should be type of {DataFrame.__name__}"):
@@ -194,10 +204,6 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
     # Test type validation for boolean parameters
     with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
         kwargs = etl_kwargs.copy() | {"historize": "str"}
-        etl.init(**kwargs)
-
-    with pytest.raises(TypeError, match=f"should be type of {bool.__name__}"):
-        kwargs = etl_kwargs.copy() | {"create_historized_mlv": "str"}
         etl.init(**kwargs)
 
     # is_delta_load should be bool
@@ -260,11 +266,6 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
         kwargs = etl_kwargs.copy() | {"nk_column_concate_str": 123}
         etl.init(**kwargs)
 
-    # mlv_suffix should be str
-    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
-        kwargs = etl_kwargs.copy() | {"mlv_suffix": 123}
-        etl.init(**kwargs)
-
     # constant_columns should be list
     with pytest.raises(TypeError, match=f"should be type of {list.__name__}"):
         kwargs = etl_kwargs.copy() | {"constant_columns": "str"}
@@ -273,11 +274,6 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
     # row_load_dts_column should be str
     with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
         kwargs = etl_kwargs.copy() | {"row_load_dts_column": 123}
-        etl.init(**kwargs)
-
-    # row_hist_number_column should be str
-    with pytest.raises(TypeError, match=f"should be type of {str.__name__}"):
-        kwargs = etl_kwargs.copy() | {"row_hist_number_column": 123}
         etl.init(**kwargs)
 
     # row_is_current_column should be str
@@ -351,19 +347,9 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
         kwargs = etl_kwargs.copy() | {"nk_column_concate_str": ""}
         etl.init(**kwargs)
 
-    # mlv_suffix should be min length 1
-    with pytest.raises(ValueError, match="Param length to short."):
-        kwargs = etl_kwargs.copy() | {"mlv_suffix": ""}
-        etl.init(**kwargs)
-
     # row_load_dts_column should be min length 3
     with pytest.raises(ValueError, match="Param length to short."):
         kwargs = etl_kwargs.copy() | {"row_load_dts_column": "ab"}
-        etl.init(**kwargs)
-
-    # row_hist_number_column should be min length 3
-    with pytest.raises(ValueError, match="Param length to short."):
-        kwargs = etl_kwargs.copy() | {"row_hist_number_column": "ab"}
         etl.init(**kwargs)
 
     # row_is_current_column should be min length 3
@@ -395,26 +381,20 @@ def test_init_etl_fail_params(spark_: SparkSession) -> None:
 
 
 def test_ingest(spark_: SparkSession) -> None:
-    """
-    Test the core ingestion functionality of SilverIngestionInsertOnlyService.
-
-    This comprehensive test covers the complete ingestion workflow including:
-    1. Initial data load from bronze to silver layer
-    2. No-change detection on subsequent runs
-    3. Complex data changes (inserts, updates, deletes)
-    4. Proper historization of data changes
-    5. Correct handling of delete operations with timestamps
-
-    The test validates that:
-    - All data warehouse columns are properly added
-    - Row counts are accurate throughout the process
-    - Data integrity is maintained during transformations
-    - Deleted records are properly marked with ROW_DELETE_DTS
+    """Test the ingestion process.
+    This test verifies the end-to-end functionality of the SilverIngestionSCD2Service,
+    including data extraction, transformation, and loading into the silver layer.
+    It covers the following scenarios:
+    - Initial data ingestion from bronze to silver layer
+    - Handling of no-change scenarios
+    - Complex changes including inserts, updates, and deletes
+    - Verification of data integrity and schema evolution
 
     Args:
+        spark_ (SparkSession): Spark session fixture for testing.
     """
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Setup test data configuration
@@ -426,7 +406,7 @@ def test_ingest(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=i, name=f"{prefix}{i}")
         for i in range(1, init_count + 1)
     ]
-    current_expected_data = init_data.copy()
+    expected_data = init_data.copy()
 
     # Initialize bronze data generator and write initial data
     bronze = BronzeDataFrameDataGenerator(
@@ -443,42 +423,28 @@ def test_ingest(spark_: SparkSession) -> None:
         assert row["name"] == init_data[i].name
 
     # PHASE 1: Initial silver ingestion (first load)
-    inserted_df = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial ingestion results
-    assert inserted_df is not None
-    assert inserted_df.count() == len(current_expected_data)
-    assert bronze.df.count() == len(current_expected_data)
-    assert silver_df_1.count() == len(current_expected_data)
+    assert bronze.df.count() == len(expected_data)
+    assert silver_df_1.count() == len(expected_data)
 
     # Verify column structure is preserved and DW columns are added
-    assert all(True for column in bronze.df.columns if column in inserted_df.columns)
-    assert all(True for column in etl._dw_columns if column in inserted_df.columns)
     assert all(True for column in bronze.df.columns if column in silver_df_1.columns)
     assert all(True for column in etl._dw_columns if column in silver_df_1.columns)
 
-    # Verify data content integrity in initial load
-    for i, row in enumerate(inserted_df.orderBy("id").collect()):
-        assert row["name"] == init_data[i].name
-        assert row["created_at"] == init_data[i].created_at
-        assert row["updated_at"] == init_data[i].updated_at
-
     for i, row in enumerate(silver_df_1.orderBy("id").collect()):
-        assert row["name"] == current_expected_data[i].name
-        assert row["created_at"] == current_expected_data[i].created_at
-        assert row["updated_at"] == current_expected_data[i].updated_at
+        assert row["name"] == expected_data[i].name
+        assert row["created_at"] == expected_data[i].created_at
+        assert row["updated_at"] == expected_data[i].updated_at
 
     # PHASE 2: No-change ingestion (should detect no changes)
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify no changes detected (empty inserted_df)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == 0
-    assert silver_df_2.count() == len(current_expected_data)
-    assert all(True for column in bronze.df.columns if column in inserted_df.columns)
-    assert all(True for column in etl._dw_columns if column in inserted_df.columns)
+    assert silver_df_2.count() == len(expected_data)
 
     # PHASE 3: Complex changes (inserts, updates, deletes)
     # Prepare new records for insertion
@@ -488,7 +454,6 @@ def test_ingest(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=102, name="Name-102"),
         BronzeDataFrameRecord(id=103, name="Name-103"),
     ]
-    current_expected_data += new_data
 
     # Prepare records for updates (modify existing records)
     updated_data_ids = [4, 5, 6]
@@ -498,24 +463,13 @@ def test_ingest(spark_: SparkSession) -> None:
             name=f"{r.name}-Update-1",
             created_at=r.created_at
         )
-        for r in current_expected_data
+        for r in expected_data
         if r.id in updated_data_ids
     ]
-    current_expected_data += updated_data
 
     # Prepare records for deletion (remove from bronze, track in silver)
     deleted_data_ids = [1, 7, 9]
-    deleted_dt_for_reference = datetime.now()
-    deleted_data = [
-        BronzeDataFrameRecord(
-            id=r.id,
-            name=r.name,
-            created_at=r.created_at,
-            updated_at=deleted_dt_for_reference
-        )
-        for r in current_expected_data if r.id in deleted_data_ids
-    ]
-    current_expected_data += deleted_data
+    expected_data = update_expected_data(expected_data, new_data, updated_data)
 
     # Apply all changes to bronze layer (inserts, updates, deletes)
     bronze.add_records(new_data) \
@@ -525,41 +479,60 @@ def test_ingest(spark_: SparkSession) -> None:
           .read()
 
     # Execute ingestion after complex changes
-    inserted_df_3 = etl.ingest()
+    etl.ingest()
     silver_df_3 = etl.read_silver_df()
 
-    # Calculate expected change count
-    changed_count = len(new_data) + len(updated_data) + len(deleted_data_ids)
-
-    # Sort expected data for consistent comparison
-    current_expected_data = sorted(
-        current_expected_data,
-        key=lambda r: (r.id, r.created_at)
-    )
-
     assert bronze.df.count() == init_count + len(new_data) - len(deleted_data_ids)
-    assert inserted_df_3 is not None
-    assert inserted_df_3.count() == changed_count
-    assert silver_df_3.count() == len(current_expected_data)
+    assert silver_df_3.count() == len(expected_data)
 
     deleted_count = 0
+    seen_updated_ids = set()
     for i, row in enumerate(silver_df_3.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
         logger.info(f"Row {i}: {row}")
-        expected_record = current_expected_data[i]
+        expected_record = expected_data[i]
         assert row["id"] == expected_record.id
         assert row["name"] == expected_record.name
         assert row["created_at"] == expected_record.created_at
 
-        is_deleted_row = (
-            row["id"] in deleted_data_ids and
-            expected_record.updated_at == deleted_dt_for_reference
-        )
+        if expected_record.id in updated_data_ids and expected_record.id not in seen_updated_ids:
+            assert row["ROW_UPDATE_DTS"] is not None
+            assert row["ROW_IS_CURRENT"] == 0
+            seen_updated_ids.add(expected_record.id)
 
-        if is_deleted_row:
+        if expected_record.id in deleted_data_ids:
             assert row["ROW_DELETE_DTS"] is not None
+            assert row["ROW_UPDATE_DTS"] is not None
+            assert row["ROW_IS_CURRENT"] == 0
             deleted_count += 1
-        else:
-            assert row["ROW_DELETE_DTS"] is None
+
+    assert deleted_count == len(deleted_data_ids)
+
+    # PHASE 4: no changes again
+    etl.ingest()
+    silver_df_4 = etl.read_silver_df()
+
+    assert bronze.df.count() == init_count + len(new_data) - len(deleted_data_ids)
+    assert silver_df_4.count() == len(expected_data)
+
+    deleted_count = 0
+    seen_updated_ids = set()
+    for i, row in enumerate(silver_df_4.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
+        logger.info(f"Row {i}: {row}")
+        expected_record = expected_data[i]
+        assert row["id"] == expected_record.id
+        assert row["name"] == expected_record.name
+        assert row["created_at"] == expected_record.created_at
+
+        if expected_record.id in updated_data_ids and expected_record.id not in seen_updated_ids:
+            assert row["ROW_UPDATE_DTS"] is not None
+            assert row["ROW_IS_CURRENT"] == 0
+            seen_updated_ids.add(expected_record.id)
+
+        if expected_record.id in deleted_data_ids:
+            assert row["ROW_DELETE_DTS"] is not None
+            assert row["ROW_UPDATE_DTS"] is not None
+            assert row["ROW_IS_CURRENT"] == 0
+            deleted_count += 1
 
     assert deleted_count == len(deleted_data_ids)
 
@@ -580,7 +553,7 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     """
     # PHASE 1: Initial setup and baseline data ingestion
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial dataset without the new column
@@ -600,16 +573,13 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Perform initial ingestion to establish baseline
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df = etl.read_silver_df()
 
     # Verify initial state - no new column exists yet
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df.count() == len(init_data)
     assert NCOL not in bronze.df.columns
-    assert NCOL not in inserted_df_1.columns
     assert NCOL not in silver_df.columns
 
     # PHASE 2: Schema evolution - adding new column with data
@@ -621,8 +591,7 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     updated_data = [
         BronzeDataFrameRecord(id=1, name="Name-1", ncol="Value-1")
     ]
-    expected_data += new_data
-    expected_data += updated_data
+    expected_data = update_expected_data(expected_data, new_data, updated_data)
 
     # Add the new column to bronze schema and populate with data
     bronze.add_ncol_column() \
@@ -638,35 +607,32 @@ def test_ingest_new_added_column(spark_: SparkSession) -> None:
     )
 
     # 2. Perform second ingestion with new column present
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify schema evolution was handled correctly
     assert bronze.df.count() == len(init_data) + len(new_data)  # Bronze has all records
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(new_data) + len(updated_data)  # Only new records should be inserted
     assert silver_df_2.count() == len(expected_data)  # Total records in silver layer
     assert NCOL in bronze.df.columns    # New column exists in bronze
-    assert NCOL in inserted_df_2.columns  # New column exists in inserted data
     assert NCOL in silver_df_2.columns    # New column exists in silver layer
 
     # 3. Validate that new records contain correct values for new column
-    new_data_ids = {r.id for r in new_data}
-    updated_data_ids = {r.id for r in updated_data}
-    seen_updated_data_ids = set()
+
+    ncol_new_data_ids = set([r.id for r in new_data])
+    ncol_updated_data_ids = set([r.id for r in updated_data])
     for i, row in enumerate(silver_df_2.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
-        logger.info(f"Row {i}: {row}")
-        if row["id"] in new_data_ids:
-            assert row["ncol"] is not None
+        if row["id"] in ncol_new_data_ids:
             assert row["name"] == expected_data[i].name
             assert row["ncol"] == expected_data[i].ncol
-        elif row["id"] in updated_data_ids and row["id"] in seen_updated_data_ids:
-            assert row["ncol"] is not None
+
+        elif row["id"] in ncol_updated_data_ids:
             assert row["name"] == expected_data[i].name
-            assert row["ncol"] == expected_data[i].ncol
-        elif row["id"] in updated_data_ids and row["id"] not in seen_updated_data_ids:
-            seen_updated_data_ids.add(row["id"])
-            assert row["ncol"] is None
+            if row["ROW_IS_CURRENT"] == 1:
+                assert row["ncol"] is not None
+                assert row["ncol"] == expected_data[i].ncol
+                assert row["ROW_UPDATE_DTS"] is None
+            else:
+                assert row["ROW_UPDATE_DTS"] is not None
 
 
 def test_ingest_remove_column(spark_: SparkSession) -> None:
@@ -684,7 +650,7 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
     """
     # PHASE 1: Initial setup with column present
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial data that includes the column to be removed later
@@ -706,16 +672,13 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion with column present
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df = etl.read_silver_df()
 
     # Verify initial state - column exists everywhere
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df.count() == len(init_data)
     assert NCOL in bronze.df.columns
-    assert NCOL in inserted_df_1.columns
     assert NCOL in silver_df.columns
 
     # Validate initial data with non-null values in the column
@@ -734,13 +697,13 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=11, name="Name-11"),
         BronzeDataFrameRecord(id=12, name="Name-12")
     ]
-    expected_data += new_data
 
     # Also update existing record (without the removed column)
     updated_data = [
         BronzeDataFrameRecord(id=1, name="Name-Updated")
     ]
-    expected_data += updated_data
+
+    expected_data = update_expected_data(expected_data, new_data, updated_data)
 
     # Add new records and update existing ones
     bronze.add_records(new_data) \
@@ -749,29 +712,31 @@ def test_ingest_remove_column(spark_: SparkSession) -> None:
           .read()
 
     # 2. Perform ingestion after column removal
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
-
-    # Sort expected data for comparison consistency
-    expected_data = sorted(
-        expected_data,
-        key=lambda r: (r.id, r.created_at)
-    )
 
     # Verify column removal was handled correctly
     assert bronze.df.count() == len(init_data) + len(new_data)  # Bronze has fewer records (no column)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(new_data) + len(updated_data)  # Only changed records
     assert silver_df_2.count() == len(expected_data)  # All records preserved in silver
     assert NCOL not in bronze.df.columns    # Column removed from bronze
-    assert NCOL in inserted_df_2.columns    # Column preserved in silver (with NULLs)
     assert NCOL in silver_df_2.columns      # Column preserved in silver layer
 
     # 3. Validate that all expected data is present with correct column values
+    new_data_ids = set([r.id for r in new_data])
+    updated_data_ids = set([r.id for r in updated_data])
+    seen_updated_data_ids = set()
     for i, row in enumerate(silver_df_2.orderBy(F.col("id").asc(), F.col("ROW_LOAD_DTS").asc()).collect()):
         assert row["id"] == expected_data[i].id
         assert row["name"] == expected_data[i].name
         assert row["ncol"] == expected_data[i].ncol  # May be NULL for new records
+
+        if row["id"] in new_data_ids:
+            assert row["ncol"] is None
+        elif row["id"] in updated_data_ids and row["id"] not in seen_updated_data_ids:
+            assert row["ncol"] is not None
+            seen_updated_data_ids.add(row["id"])
+        elif row["id"] in updated_data_ids and row["id"] in seen_updated_data_ids:
+            assert row["ncol"] is None
 
 
 def test_ingest_reactivating_deleted_values_in_source(
@@ -796,7 +761,7 @@ def test_ingest_reactivating_deleted_values_in_source(
     """
     # PHASE 1: Initial data setup and baseline ingestion
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial dataset with 5 records
@@ -819,12 +784,10 @@ def test_ingest_reactivating_deleted_values_in_source(
     bronze.write().read()
 
     # 1. Init silver ingestion - establish baseline
-    inserted_df = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial ingestion completed successfully
-    assert inserted_df is not None
-    assert inserted_df.count() == len(expected_data)
     assert bronze.df.count() == len(expected_data)
     assert silver_df_1.count() == len(expected_data)
 
@@ -836,16 +799,11 @@ def test_ingest_reactivating_deleted_values_in_source(
           .read()
 
     # Perform ingestion after deletions
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
-
-    # Track deleted records in expected data (they get marked as deleted, not removed)
-    expected_data += [r for r in init_data if r.id in deleted_data_ids]
 
     # Verify deletion handling
     assert bronze.df.count() == len(init_data) - len(deleted_data_ids)  # Bronze has fewer records
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(deleted_data_ids)  # Deleted records inserted with delete timestamp
     assert silver_df_2.count() == len(expected_data)  # Silver preserves all records
 
     # PHASE 3: Record reactivation scenario
@@ -859,17 +817,14 @@ def test_ingest_reactivating_deleted_values_in_source(
           .read()
 
     # Perform ingestion after reactivation
-    inserted_df_3 = etl.ingest()
+    etl.ingest()
     silver_df_3 = etl.read_silver_df()
 
-    # Track reactivated records in expected data
-    expected_data += [r for r in init_data if r.id in reactivated_data_ids]
+    expected_data = update_expected_data(expected_data, reactivated_data, [])
 
     # Verify reactivation handling
     assert len(reactivated_data_ids) > 0
     assert bronze.df.count() == len(init_data) - len(deleted_data_ids) + len(reactivated_data_ids)
-    assert inserted_df_3 is not None
-    assert inserted_df_3.count() == len(reactivated_data_ids)  # Only reactivated records inserted
     assert silver_df_3.count() == len(expected_data)  # All records including reactivated ones
 
     # PHASE 4: Validate reactivation behavior for each reactivated record
@@ -878,12 +833,17 @@ def test_ingest_reactivating_deleted_values_in_source(
         df_test_deletes = silver_df_3.filter(F.col("id") == del_id)
 
         # Each reactivated ID should have 3 records: original, deleted, reactivated
-        assert df_test_deletes.count() == 3
-        assert df_test_deletes.filter(F.col("ROW_DELETE_DTS").isNull()).count() == 2  # Original + reactivated
-        assert df_test_deletes.filter(F.col("ROW_DELETE_DTS").isNotNull()).count() == 1  # Deleted record
-
-        # Most recent record should be active (no delete timestamp)
-        assert df_test_deletes.orderBy(F.col("ROW_LOAD_DTS").desc()).collect()[0]["ROW_DELETE_DTS"] is None
+        filter_deleted_record = (
+            (F.col("ROW_DELETE_DTS").isNotNull()) &
+            (F.col("ROW_IS_CURRENT") == 0)
+        )
+        filter_recativated_record = (
+            (F.col("ROW_DELETE_DTS").isNull()) &
+            (F.col("ROW_IS_CURRENT") == 1)
+        )
+        assert df_test_deletes.count() == 2
+        assert df_test_deletes.filter(filter_recativated_record).count() == 1  # Original + reactivated
+        assert df_test_deletes.filter(filter_deleted_record).count() == 1  # Deleted record
 
 
 def test_ingest_with_transformations(spark_: SparkSession) -> None:
@@ -914,7 +874,7 @@ def test_ingest_with_transformations(spark_: SparkSession) -> None:
         etl_kwargs["source_table"].table: transform_table  # Apply to specific table
     }
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # PHASE 2: Prepare test data and expected results
@@ -939,17 +899,15 @@ def test_ingest_with_transformations(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 3: Execute ingestion with transformations
-    inserted_df = etl.ingest()
+    etl.ingest()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df is not None
-    assert inserted_df.count() == len(init_data)
     assert silver_df.count() == len(init_data)
 
     # PHASE 4: Validate transformation was applied correctly
-    for i, row in enumerate(inserted_df.orderBy("id").collect()):
+    for i, row in enumerate(silver_df.orderBy("id").collect()):
         assert row["name"] == expected_data[i].name  # Check transformed names
 
 
@@ -980,7 +938,7 @@ def test_ingest_with_transformation_star(spark_: SparkSession) -> None:
         "*": transform_table  # Wildcard pattern for universal application
     }
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # PHASE 2: Prepare test data and expected results
@@ -1005,17 +963,15 @@ def test_ingest_with_transformation_star(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 3: Execute ingestion with universal transformations
-    inserted_df = etl.ingest()
+    etl.ingest()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df is not None
-    assert inserted_df.count() == len(init_data)
     assert silver_df.count() == len(init_data)
 
     # PHASE 4: Validate universal transformation was applied
-    for i, row in enumerate(inserted_df.orderBy("id").collect()):
+    for i, row in enumerate(silver_df.orderBy("id").collect()):
         assert row["name"] == expected_data[i].name  # Check transformed names
 
 
@@ -1048,7 +1004,7 @@ def test_ingest_with_transformation_not_applied(
         "NotMatchingTable": transform_table  # Table name doesn't match actual source
     }
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # PHASE 2: Prepare test data (should remain unchanged)
@@ -1068,17 +1024,15 @@ def test_ingest_with_transformation_not_applied(
     bronze.write().read()
 
     # PHASE 3: Execute ingestion (transformation should not be applied)
-    inserted_df = etl.ingest()
+    etl.ingest()
     silver_df = etl.read_silver_df()
 
     # Verify ingestion completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df is not None
-    assert inserted_df.count() == len(init_data)
     assert silver_df.count() == len(init_data)
 
     # PHASE 4: Validate no transformation was applied (data unchanged)
-    for i, row in enumerate(inserted_df.orderBy("id").collect()):
+    for i, row in enumerate(silver_df.orderBy("id").collect()):
         assert row["name"] == expected_data[i].name  # Names should be unchanged
 
 
@@ -1100,7 +1054,7 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl_kwargs["include_comparing_columns"] = ["name"]  # Only compare 'name' column for changes
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial data with both 'name' and 'ncol' columns
@@ -1124,16 +1078,13 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion baseline
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial state with all columns present
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
     assert NCOL in bronze.df.columns
-    assert NCOL in inserted_df_1.columns
     assert NCOL in silver_df_1.columns
 
     # PHASE 2: Test selective change detection
@@ -1145,8 +1096,6 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=1, name="Name-1-Updated", ncol="Value-1"),  # name changed - will be detected
         BronzeDataFrameRecord(id=2, name="Name-2", ncol="Value-2-Updated")  # only ncol changed - ignored by include_comparing_columns
     ]
-    expected_data += new_data
-    expected_data += updated_data[:1]  # Only first update should be included (name change)
 
     # Add new records and update existing ones
     bronze.add_records(new_data) \
@@ -1155,19 +1104,14 @@ def test_ingest_include_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # Sort expected data for comparison consistency
-    expected_data = sorted(
-        expected_data,
-        key=lambda r: (r.id, r.created_at)
-    )
+    expected_data = update_expected_data(expected_data, new_data, updated_data[:1])
 
     # 2. Perform ingestion with selective comparison
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify selective comparison results
     assert bronze.df.count() == len(init_data) + len(new_data)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(new_data) + len(updated_data[:1])  # Only name change detected
     assert silver_df_2.count() == len(expected_data)
 
     # ID=1 should have 2 records (original + name update), ID=2 should have 1 (ncol change ignored)
@@ -1199,7 +1143,7 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl_kwargs["exclude_comparing_columns"] = [NCOL, "updated_at"]  # Exclude these columns from change detection
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial data with both included and excluded columns
@@ -1223,16 +1167,13 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # 1. Initial ingestion baseline with excluded columns
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial state with all columns present
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
     assert NCOL in bronze.df.columns
-    assert NCOL in inserted_df_1.columns
     assert NCOL in silver_df_1.columns
 
     # PHASE 2: Test selective change detection with column exclusion
@@ -1244,8 +1185,6 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=1, name="Name-1-Updated", ncol="Value-1"),  # name changed - will be detected
         BronzeDataFrameRecord(id=2, name="Name-2", ncol="Value-2-Updated")  # only ncol changed - ignored by exclude_comparing_columns
     ]
-    expected_data += new_data
-    expected_data += updated_data[:1]  # Only first update should be included (name change)
 
     # Add new records and update existing ones
     bronze.add_records(new_data) \
@@ -1254,19 +1193,14 @@ def test_ingest_exclude_columns_comparing(spark_: SparkSession) -> None:
           .read()
 
     # Sort expected data for comparison consistency
-    expected_data = sorted(
-        expected_data,
-        key=lambda r: (r.id, r.created_at)
-    )
+    expected_data = update_expected_data(expected_data, new_data, updated_data[:1])
 
     # 2. Perform ingestion with column exclusion
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify column exclusion results
     assert bronze.df.count() == len(init_data) + len(new_data)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(new_data) + len(updated_data[:1])  # Only name change detected
     assert silver_df_2.count() == len(expected_data)
 
     # ID=1 should have 2 records (original + name update), ID=2 should have 1 (ncol change ignored)
@@ -1299,7 +1233,7 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
     etl_kwargs["is_delta_load"] = True                # Enable delta load mode
     etl_kwargs["delta_load_use_broadcast"] = True     # Enable broadcast join optimization
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial dataset for baseline
@@ -1322,13 +1256,11 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Initial full load to establish baseline
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify initial load completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # PHASE 2: Delta load simulation with changes only
@@ -1341,8 +1273,6 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
         BronzeDataFrameRecord(id=1, name="Name-1-Updated"),
         BronzeDataFrameRecord(id=2, name="Name-2-Updated")
     ]
-    expected_data += new_data
-    expected_data += updated_data
 
     # Clear existing data from bronze (simulating delta load where only changes are provided)
     bronze.delete_records([r.id for r in init_data]) \
@@ -1356,25 +1286,22 @@ def test_ingest_delta_load(spark_: SparkSession) -> None:
           .read()
 
     # Sort expected data for comparison consistency
-    expected_data = sorted(
-        expected_data,
-        key=lambda r: (r.id, r.created_at)
-    )
+    expected_data = update_expected_data(expected_data, new_data, updated_data)
 
     # 2. Perform delta load ingestion
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # PHASE 3: Verify delta load results
     # Bronze should only contain changed records
     assert bronze.df.count() == len(new_data) + len(updated_data)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(new_data) + len(updated_data)  # All changes processed
     assert silver_df_2.count() == len(expected_data)  # All historical data preserved
 
     # Verify historization for updated records (should have 2 versions each)
-    assert silver_df_2.filter(F.col("id") == 1).count() == 2  # Original + updated
-    assert silver_df_2.filter(F.col("id") == 2).count() == 2  # Original + updated
+    assert silver_df_2.filter(F.col("id") == 1).count() == 2
+    assert silver_df_2.filter(F.col("id") == 2).count() == 2
+    assert silver_df_2.filter(F.col("id") == 6).count() == 1
+    assert silver_df_2.filter(F.col("id") == 7).count() == 1
 
 
 def test_ingest_historize_false(spark_: SparkSession) -> None:
@@ -1394,7 +1321,7 @@ def test_ingest_historize_false(spark_: SparkSession) -> None:
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl_kwargs["historize"] = False  # Disable historization for this test
 
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create simple test data
@@ -1413,24 +1340,20 @@ def test_ingest_historize_false(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. First ingestion without historization
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify first ingestion
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # PHASE 2: Test repeated ingestion without historization
     # 2. Second ingestion with same data (should reprocess everything)
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify that all records are processed again (no change detection)
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == len(init_data)  # All records reprocessed
     assert silver_df_2.count() == len(init_data)    # No historical versions
 
 
@@ -1451,7 +1374,7 @@ def test_ingest_multiple_ids(spark_: SparkSession) -> None:
     # PHASE 1: Setup ETL with composite natural key configuration
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl_kwargs["nk_columns"] = ["id", NCOL]  # Use multiple columns for natural key
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create test data with multiple columns for natural key
@@ -1472,13 +1395,11 @@ def test_ingest_multiple_ids(spark_: SparkSession) -> None:
           .read()
 
     # 1. Perform ingestion with composite natural key
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # PHASE 2: Validate composite natural key generation
@@ -1507,7 +1428,7 @@ def test_ingest_custom_df_bronze(spark_: SparkSession) -> None:
     """
     # PHASE 1: Setup ETL with custom bronze DataFrame
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
 
     # Create test data for custom DataFrame
     init_data = [
@@ -1527,7 +1448,7 @@ def test_ingest_custom_df_bronze(spark_: SparkSession) -> None:
     etl.init(**etl_kwargs)
 
     # PHASE 2: Execute ingestion using custom DataFrame
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify that no file I/O occurred (bronze data was not written to disk)
@@ -1537,8 +1458,6 @@ def test_ingest_custom_df_bronze(spark_: SparkSession) -> None:
 
     # Verify ingestion worked with custom DataFrame
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # PHASE 3: Validate data correctness with custom DataFrame source
@@ -1564,7 +1483,7 @@ def test_ingest_partition_by_columns(spark_: SparkSession) -> None:
     # PHASE 1: Setup ETL with data partitioning configuration
     etl_kwargs = get_default_etl_kwargs(spark_=spark_)
     etl_kwargs["partition_by_columns"] = ["id", "name"]  # Partition by multiple columns
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create test data for partitioning
@@ -1583,13 +1502,11 @@ def test_ingest_partition_by_columns(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # PHASE 2: Execute ingestion with partitioning
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion completed successfully
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # PHASE 3: Validate partitioning was applied correctly
@@ -1619,7 +1536,7 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
         ConstantColumn(name="data", value="value")                        # Not part of NK
     ]
     etl_kwargs["constant_columns"] = constant_columns_europe
-    etl = SilverIngestionInsertOnlyService()
+    etl = SilverIngestionSCD2Service()
     etl.init(**etl_kwargs)
 
     # Create initial test data
@@ -1639,13 +1556,11 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
     bronze.write().read()
 
     # 1. Initial ingestion with constant columns
-    inserted_df_1 = etl.ingest()
+    etl.ingest()
     silver_df_1 = etl.read_silver_df()
 
     # Verify ingestion with constant columns
     assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
     assert silver_df_1.count() == len(init_data)
 
     # Verify constant columns were added correctly
@@ -1666,12 +1581,10 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
     expected_data += init_data
 
     # 2. Ingest same data with different constant values
-    inserted_df_2 = etl.ingest()
+    etl.ingest()
     silver_df_2 = etl.read_silver_df()
 
     # Verify different constant values create separate records
-    assert inserted_df_2 is not None
-    assert inserted_df_2.count() == 2      # Same data, different instance
     assert silver_df_2.count() == 4        # Total: europe (2) + asia (2)
 
     # PHASE 3: Add new data to specific instance
@@ -1692,137 +1605,12 @@ def test_ingest_with_constant_columns(spark_: SparkSession) -> None:
           .read()
 
     # 3. Ingest new data for asia instance
-    inserted_df_3 = etl.ingest()
+    etl.ingest()
     silver_df_3 = etl.read_silver_df()
 
     # Verify new data was added to correct instance
-    assert inserted_df_3 is not None
-    assert inserted_df_3.count() == len(new_data)      # Only new records
     assert silver_df_3.count() == len(expected_data)   # All records across instances
 
     # PHASE 4: Validate data distribution across constant value instances
     assert silver_df_3.filter(F.col("INSTANCE") == "europe").count() == 2  # Original europe data
     assert silver_df_3.filter(F.col("INSTANCE") == "asia").count() == 4    # Asia data: original (2) + new (2)
-
-
-def test_ingest_mlv_code(spark_: SparkSession) -> None:
-    """
-    Test Materialized Lake View (MLV) code generation.
-
-    This test verifies that the ETL service can generate proper MLV SQL code
-    for creating materialized views of the historized data. It ensures:
-    - MLV code is generated correctly with all columns
-    - Schema changes are reflected in MLV code updates
-    - Column order and structure are maintained
-    - MLV naming convention follows expected patterns
-    - Generated SQL is syntactically correct and complete
-
-    Args:
-        spark_: SparkSession fixture for testing
-    """
-    # PHASE 1: Initial setup and baseline MLV code generation
-    etl_kwargs = get_default_etl_kwargs(spark_=spark_)
-    etl = SilverIngestionInsertOnlyService()
-    etl.init(**etl_kwargs)
-
-    # Expected MLV code for initial schema (without additional columns)
-    expected_mlv_code = """
-SELECT
-`PK`,
-`NK`,
-`id`,
-`name`,
-`created_at`,
-`updated_at`,
-`ROW_LOAD_DTS`,
-`ROW_UPDATE_DTS`,
-`ROW_DELETE_DTS`,
-`ROW_IS_CURRENT`,
-`ROW_HIST_NUMBER`
-"""
-
-    # Create initial test data
-    init_data = [
-        BronzeDataFrameRecord(id=1, name="Name-1"),
-        BronzeDataFrameRecord(id=2, name="Name-2")
-    ]
-
-    # Set up bronze layer with initial data
-    bronze = BronzeDataFrameDataGenerator(
-        spark=spark_,
-        table=etl_kwargs["source_table"],
-        init_data=init_data
-    )
-
-    bronze.write().read()
-
-    # 1. Perform initial ingestion to generate baseline MLV code
-    inserted_df_1 = etl.ingest()
-    silver_df_1 = etl.read_silver_df()
-
-    # Verify initial ingestion and MLV code generation
-    assert bronze.df.count() == len(init_data)
-    assert inserted_df_1 is not None
-    assert inserted_df_1.count() == len(init_data)
-    assert silver_df_1.count() == len(init_data)
-
-    # Validate MLV properties and initial code structure
-    assert etl.mlv_name == f"{etl._dest_table.table_path}{etl._mlv_suffix}"
-    assert expected_mlv_code in etl.mlv_code
-
-    # PHASE 2: Schema evolution and MLV code update
-    # 1. Add columns (schema change)
-    # Expected MLV code after schema evolution with additional columns
-    expected_mlv_code = """
-SELECT
-`PK`,
-`NK`,
-`id`,
-`name`,
-`created_at`,
-`updated_at`,
-`ncol`,
-`INSTANCE`,
-`DATA`,
-`ROW_LOAD_DTS`,
-`ROW_UPDATE_DTS`,
-`ROW_DELETE_DTS`,
-`ROW_IS_CURRENT`,
-`ROW_HIST_NUMBER`
-FROM cte_mlv
-"""
-    # Add constant columns for schema evolution test
-    constant_columns = [
-        ConstantColumn(name="instance", value="europe", part_of_nk=True),
-        ConstantColumn(name="data", value="value")
-    ]
-    etl_kwargs["constant_columns"] = constant_columns
-    etl.init(**etl_kwargs)
-
-    # Add new data with additional column
-    new_data = [
-        BronzeDataFrameRecord(id=11, name="Name-11", ncol="Value-11"),
-        BronzeDataFrameRecord(id=12, name="Name-12", ncol="Value-12")
-    ]
-    bronze.add_ncol_column() \
-          .add_records(new_data) \
-          .write() \
-          .read()
-
-    # Track new columns that should appear in MLV code
-    new_columns = ["INSTANCE", "DATA", NCOL]
-
-    # 2. Perform second ingestion with schema changes
-    inserted_df_2 = etl.ingest()
-    silver_df_2 = etl.read_silver_df()
-
-    # PHASE 3: Validate schema evolution in MLV code
-    # Verify new columns are present in all layers
-    assert NCOL in bronze.df.columns
-    assert NCOL in inserted_df_2.columns
-    assert NCOL in silver_df_2.columns
-    assert all(col in silver_df_2.columns for col in new_columns)
-    assert all(col in inserted_df_2.columns for col in new_columns)
-
-    # Validate that MLV code was updated to include all new columns
-    assert expected_mlv_code in etl.mlv_code

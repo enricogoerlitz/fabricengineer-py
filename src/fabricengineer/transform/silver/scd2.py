@@ -43,7 +43,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         row_delete_dts_column: str = "ROW_DELETE_DTS",
         row_load_dts_column: str = "ROW_LOAD_DTS",
 
-        is_testing_mock: bool = False
+        **kwargs
     ) -> None:
         dw_columns = [
             pk_column_name,
@@ -78,7 +78,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
             row_delete_dts_column=row_delete_dts_column,
             row_load_dts_column=row_load_dts_column,
 
-            is_testing_mock=is_testing_mock
+            is_testing_mock=kwargs.get("is_testing_mock", False)
         )
 
         self._validate_scd2_params()
@@ -249,6 +249,7 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
             return None
 
         df = self.read_silver_df()
+        df = df.filter(F.col(self._row_is_current_column) == 1)
 
         self._validate_nk_columns_in_df(df)
 
@@ -260,8 +261,6 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
                 df = df.filter(F.col(constant_column.name) == constant_column.value)
 
         df = df.withColumn(self._nk_column_name, F.concat_ws(self._nk_column_concate_str, *self._nk_columns))
-
-        df = df.filter(F.col(self._row_is_current_column) == 1)
 
         return df
 
