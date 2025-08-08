@@ -1789,7 +1789,6 @@ SELECT
 `ROW_DELETE_DTS`,
 `ROW_IS_CURRENT`,
 `ROW_HIST_NUMBER`
-FROM cte_mlv
 """
     # Add constant columns for schema evolution test
     constant_columns = [

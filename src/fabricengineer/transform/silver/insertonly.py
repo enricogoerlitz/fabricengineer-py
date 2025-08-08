@@ -423,11 +423,16 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
             has_schema_changed (bool): Indicates if the schema has changed.
             target_columns_ordered (list[str]): The ordered list of target columns.
         """
-        if not has_schema_changed:
+        is_mlv_existing = (
+            self._spark.catalog.tableExists(self._mlv.table_path)
+            if not self._is_testing_mock else True
+        )
+        if not has_schema_changed and is_mlv_existing:
             logger.info("MLV: No schema change detected.")
             return
 
-        self._mlv.drop()
+        if is_mlv_existing:
+            self._mlv.drop()
         self._create_historized_mlv(target_columns_ordered)
 
     def _create_historized_mlv(self, target_columns_ordered: list[str]) -> None:

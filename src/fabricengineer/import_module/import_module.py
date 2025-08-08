@@ -40,6 +40,7 @@ def import_module(
 def _import_module_insertonly(base_path: str) -> str:
     """Imports the insertonly module from the specified base path."""
     logger_module = _import_logging_logger_module(base_path)
+    timer_module = _import_logging_timelogger_module(base_path)
     lakehouse_module = _import_transform_lakehouse_module(base_path)
     base_module = _import_transform_silver_base_module(base_path)
     utils_module = _import_transform_silver_utils_module(base_path)
@@ -48,6 +49,7 @@ def _import_module_insertonly(base_path: str) -> str:
 
     imports = """
 import os
+import time
 import logging
 
 from datetime import datetime
@@ -72,6 +74,7 @@ from pyspark.sql import (
         utils_module,
         base_module,
         mlv_module,
+        timer_module,
         insertonly_module
     ])
 
@@ -81,6 +84,7 @@ from pyspark.sql import (
 def _import_module_scd2(base_path: str) -> str:
     """Imports the scd2 module from the specified base path."""
     scd2_module = _import_transform_scd2_module(base_path)
+    timer_module = _import_logging_timelogger_module(base_path)
     logger_module = _import_logging_logger_module(base_path)
     lakehouse_module = _import_transform_lakehouse_module(base_path)
     base_module = _import_transform_silver_base_module(base_path)
@@ -88,6 +92,7 @@ def _import_module_scd2(base_path: str) -> str:
 
     imports = """
 import os
+import time
 import logging
 
 from datetime import datetime
@@ -111,6 +116,7 @@ from pyspark.sql import (
         lakehouse_module,
         utils_module,
         base_module,
+        timer_module,
         scd2_module
     ])
 
