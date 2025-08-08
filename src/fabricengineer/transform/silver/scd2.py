@@ -145,6 +145,9 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
                 # because the delta load (bronze layer) do not contain all the data!
             )
         )
+
+        self._create_destination_schema()
+
         if do_overwrite:
             df_inital_load = df_bronze.select(target_columns_ordered)
             self._write_df(df_inital_load, "overwrite")

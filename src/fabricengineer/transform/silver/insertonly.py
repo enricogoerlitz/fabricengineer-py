@@ -161,6 +161,9 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
                 # because the delta load (bronze layer) do not contain all the data!
             )
         )
+
+        self._create_destination_schema()
+
         if do_overwrite:
             df_inital_load = df_bronze.select(target_columns_ordered)
             self._write_df(df_inital_load, "overwrite")
@@ -185,7 +188,6 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
                                           .select(target_columns_ordered) \
                                           .dropDuplicates(["PK"])
 
-        self._create_destination_schema()
         # 6.
         if self._is_delta_load:
             self._write_df(df_data_to_insert, "append")
