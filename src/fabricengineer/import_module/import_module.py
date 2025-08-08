@@ -148,7 +148,7 @@ def _import_logging_logger_module(base_path: str) -> str:
 
 def _import_logging_timelogger_module(base_path: str) -> str:
     """Imports the TimeLogger module from the logging directory."""
-    timelogger_module = f"{base_path}/logging/timelogger.py"
+    timelogger_module = f"{base_path}/logging/timer.py"
     return _fetch_module_content(timelogger_module)
 
 
