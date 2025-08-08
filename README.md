@@ -108,7 +108,7 @@ etl.init(
 
 timer.start().log()
 etl.run()
-timer.end().log()
+timer.stop().log()
 ```
 
 #### SCD Type 2 (Slowly Changing Dimensions)
@@ -175,7 +175,7 @@ etl.init(
 
 timer.start().log()
 etl.run()
-timer.end().log()
+timer.stop().log()
 ```
 
 ### Materialized Lake Views Management
@@ -283,7 +283,7 @@ timer.start().log()
 # Your ETL operations here
 etl.run()
 
-timer.end().log()
+timer.stop().log()
 
 # Custom fabricengineer logging
 logger.info("Custom log message")

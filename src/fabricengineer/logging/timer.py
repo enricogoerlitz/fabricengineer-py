@@ -39,7 +39,7 @@ class TimeLogger:
         if self._start_time and self._end_time is None:
             msg = f"TIMER-START:\t{self._fmt(self._start_time)}"
         elif self._start_time and self._end_time:
-            msg = f"TIMER-END:\t{self._fmt(self._end_time)}, ELAPSED: {self.elapsed_time()}s"
+            msg = f"TIMER-END:\t\t{self._fmt(self._end_time)}, ELAPSED: {self.elapsed_time()}s"
         else:
             msg = "Timer has not been started and stopped properly."
             logger.warning(msg)

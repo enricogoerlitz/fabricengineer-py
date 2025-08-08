@@ -208,6 +208,12 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
 
         writer.saveAsTable(self._dest_table.table_path)
 
+    def _create_destination_schema(self) -> None:
+        """Creates the destination schema if it does not exist."""
+        sql = f"CREATE SCHEMA IF NOT EXISTS {self._dest_table.lakehouse}.{self._dest_table.schema}"
+        if not self._is_testing_mock:
+            self._spark.sql(sql)
+
     def _get_columns_ordered(self, df: DataFrame, last_columns: list[str]) -> list[str]:
         """Get the columns in the desired order for processing.
 

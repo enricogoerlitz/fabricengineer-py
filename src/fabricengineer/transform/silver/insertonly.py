@@ -185,6 +185,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
                                           .select(target_columns_ordered) \
                                           .dropDuplicates(["PK"])
 
+        self._create_destination_schema()
         # 6.
         if self._is_delta_load:
             self._write_df(df_data_to_insert, "append")
