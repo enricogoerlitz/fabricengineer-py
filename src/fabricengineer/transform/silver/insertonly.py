@@ -468,11 +468,15 @@ WITH cte_mlv AS (
 ), cte_mlv_final AS (
     SELECT
         *
-        ,IIF({self._row_hist_number_column} = 1 AND {self._row_delete_dts_column} IS NULL, 1, 0) AS {self._row_is_current_column}
+        ,CASE
+            WHEN {self._row_hist_number_column} = 1 AND {self._row_delete_dts_column} IS NULL THEN 1
+            ELSE 0
+        END AS {self._row_is_current_column}
+    FROM cte_mlv
 )
 SELECT
 {final_ordered_columns_str}
-FROM cte_mlv
+FROM cte_mlv_final
 """
 
     def _mlv_silver_columns_ordered_str(self, target_columns_ordered: list[str]) -> str:
