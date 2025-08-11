@@ -174,23 +174,28 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
                                     .select(target_columns_ordered) \
                                     .dropDuplicates(["PK"])
 
-        self._write_df(df_new_data, "append")
+        # self._write_df(df_new_data, "append")
 
         # 5.
         # Expired records are the records in silver layer, which was updated. Merge/Update them and
         # add current timestamp to ROW_UPDATE_DTS and set ROW_IS_CURRENT to 0.
         df_expired_records = self._filter_expired_records(df_joined, df_silver, updated_filter_condition)
 
+        df_merge_into_records = df_new_data.unionByName(df_expired_records) \
+                                           .select(target_columns_ordered) \
+                                           .dropDuplicates(["PK"])
+
         # 6.
         if self._is_delta_load:
-            self._exec_merge_into(df_expired_records)
+            self._exec_merge_into(df_merge_into_records, target_columns_ordered)
             return
 
         df_deleted_records = self._filter_deleted_records(df_joined, df_bronze, df_silver)
 
-        df_merge_into_records = df_expired_records.unionByName(df_deleted_records) \
-                                                  .select(target_columns_ordered)
-        self._exec_merge_into(df_merge_into_records)
+        df_merge_into_records = df_merge_into_records.unionByName(df_deleted_records) \
+                                                     .select(target_columns_ordered)
+
+        self._exec_merge_into(df_merge_into_records, target_columns_ordered)
 
     def _generate_dataframes(self) -> tuple[DataFrame, DataFrame]:
         """Generates the bronze and silver DataFrames.
@@ -396,44 +401,71 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
 
         return df
 
-    def _exec_merge_into(self, df_source: DataFrame) -> None:
+    def _exec_merge_into(self, df_merge: DataFrame, target_columns_ordered: list[str]) -> None:
         """Executes the MERGE INTO statement.
-        This method merges the source DataFrame into the destination table using the Delta Lake MERGE INTO operation.
-        It matches records based on the primary key (PK) column and updates the ROW_UPDATE_DTS, ROW_DELETE_DTS, and ROW_IS_CURRENT columns.
+        - Updates existing rows (by PK) für ROW_UPDATE_DTS, ROW_DELETE_DTS, ROW_IS_CURRENT.
+        - Inserts neue Rows (by NOT MATCHED) mit allen in target_columns_ordered verfügbaren Spalten aus df_merge.
 
         Args:
-            df_source (DataFrame): The source DataFrame to merge.
-            view_name (str): The name of the view to merge into.
+            df_merge (DataFrame): Source-DataFrame, das gemerged werden soll.
+            target_columns_ordered (list[str]): Zielspalten-Reihenfolge; wird für INSERT verwendet.
         """
+        # Sicherheitsnetz: nur Spalten inserten, die im Source auch vorhanden sind
+        insert_cols = [c for c in target_columns_ordered if c in df_merge.columns]
+        if not insert_cols:
+            raise ValueError("Keine der target_columns_ordered-Spalten ist im df_merge vorhanden; INSERT wäre leer.")
+
         if self._is_testing_mock:
+            # DeltaTable-API (Mock / File-Path)
             target_path = get_mock_table_path(self._dest_table)
             delta_table = DeltaTable.forPath(self._spark, target_path)
-            delta_table.alias("target") \
+
+            # Update-Set nur für die drei ROW_* Spalten (wie bisher)
+            update_set = {
+                self._row_update_dts_column: f"source.{self._row_update_dts_column}",
+                self._row_delete_dts_column: f"source.{self._row_delete_dts_column}",
+                self._row_is_current_column: f"source.{self._row_is_current_column}"
+            }
+
+            # Insert-Set für alle gewünschten Spalten
+            insert_set = {col: f"source.{col}" for col in insert_cols}
+
+            (
+                delta_table.alias("target")
                 .merge(
-                    df_source.alias("source"),
+                    df_merge.alias("source"),
                     f"target.{self._pk_column_name} = source.{self._pk_column_name}"
-                ) \
-                .whenMatchedUpdate(set={
-                    self._row_update_dts_column: f"source.{self._row_update_dts_column}",
-                    self._row_delete_dts_column: f"source.{self._row_delete_dts_column}",
-                    self._row_is_current_column: f"source.{self._row_is_current_column}"
-                }) \
+                )
+                .whenMatchedUpdate(set=update_set)
+                .whenNotMatchedInsert(values=insert_set)
                 .execute()
+            )
             return
 
+        # SQL-Pfad (Katalogtabellen)
         destination_table_path = self._dest_table.table_path
-        view_name = destination_table_path.replace('.', '_').replace('`', '') + "_view"
-        df_source.createOrReplaceTempView(view_name)
 
+        # Temp-View-Name (einfach, robust, ohne Backticks)
+        view_name = destination_table_path.replace('.', '_').replace('`', '') + "_view"
+        df_merge.createOrReplaceTempView(view_name)
+
+        # INSERT-Spaltenliste und VALUES dynamisch aus insert_cols
+        cols_sql = ", ".join(f"`{c}`" for c in insert_cols)
+        vals_sql = ", ".join(f"source.`{c}`" for c in insert_cols)
+
+        # MERGE-SQL
         self._spark.sql(f"""
             MERGE INTO {destination_table_path} AS target
             USING {view_name} AS source
-            ON target.{self._pk_column_name} = source.{self._pk_column_name}
+            ON target.`{self._pk_column_name}` = source.`{self._pk_column_name}`
             WHEN MATCHED THEN
             UPDATE SET
-                {self._row_update_dts_column} = source.{self._row_update_dts_column},
-                {self._row_delete_dts_column} = source.{self._row_delete_dts_column},
-                {self._row_is_current_column} = source.{self._row_is_current_column}
+                `{self._row_update_dts_column}` = source.`{self._row_update_dts_column}`,
+                `{self._row_delete_dts_column}` = source.`{self._row_delete_dts_column}`,
+                `{self._row_is_current_column}` = source.`{self._row_is_current_column}`
+            WHEN NOT MATCHED THEN
+            INSERT ({cols_sql})
+            VALUES ({vals_sql})
         """)
 
 

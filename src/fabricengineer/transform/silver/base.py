@@ -473,6 +473,7 @@ class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
         self._spark.conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED")
         self._spark.conf.set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+        self._spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
 
     def __str__(self) -> str:
         if not self._is_initialized:
