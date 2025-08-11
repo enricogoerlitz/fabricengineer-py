@@ -12,4 +12,4 @@ class LakehouseTable:
 
     @property
     def table_path(self) -> str:
-        return f"{self.lakehouse}.{self.schema}.{self.table}"
+        return f"`{self.lakehouse}`.`{self.schema}`.`{self.table}`"
