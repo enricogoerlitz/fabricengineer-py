@@ -470,7 +470,7 @@ class SilverIngestionInsertOnlyService(BaseSilverIngestionServiceImpl):
 WITH cte_mlv AS (
     SELECT
         {silver_columns_ordered_str}
-        ,LEAD({self._row_load_dts_column}) OVER (PARTITION BY {self._nk_column_name} {constant_column_str} ORDER BY {self._row_load_dts_column} DESC) AS {self._row_update_dts_column}
+        ,LAG({self._row_load_dts_column}) OVER (PARTITION BY {self._nk_column_name} {constant_column_str} ORDER BY {self._row_load_dts_column} DESC) AS {self._row_update_dts_column}
         ,ROW_NUMBER() OVER (PARTITION BY {self._nk_column_name} {constant_column_str} ORDER BY {self._row_load_dts_column} DESC) AS {self._row_hist_number_column}
     FROM {self._dest_table.table_path}
 ), cte_mlv_final AS (
