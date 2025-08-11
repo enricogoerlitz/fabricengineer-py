@@ -30,16 +30,6 @@ class BaseSilverIngestionService(ABC):
 
 
 class BaseSilverIngestionServiceImpl(BaseSilverIngestionService, ABC):
-    """TODO:
-    1. validate parameters hier rein
-        - dann muss man nur seine eigenen validieren
-    2. InsertOnly base impl
-    3. InsertOnly base testen
-    4. SCD2 base impl
-    5. SCD2 base tests schreiben
-    6. SCD2 base testen
-
-    """
     _is_initialized: bool = False
 
     @abstractmethod

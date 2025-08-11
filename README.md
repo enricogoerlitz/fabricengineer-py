@@ -51,7 +51,7 @@ The Insert-Only service is ideal for append-only scenarios where you need to tra
 from pyspark.sql import DataFrame, functions as F
 from fabricengineer.logging import TimeLogger
 from fabricengineer.transform.lakehouse import LakehouseTable
-from fabricengineer.transform import SilverIngesationInsertOnly
+from fabricengineer.transform import SilverIngestionInsertOnlyService
 
 
 def transform_projects(df: DataFrame, etl) -> DataFrame:
@@ -86,7 +86,7 @@ destination_table = LakehouseTable(
 )
 
 # Initialize and configure the ETL service
-etl = SilverIngestionInsertOnly()
+etl = SilverIngestionInsertOnlyService()
 etl.init(
     spark_=spark,
     notebookutils_=notebookutils,
@@ -220,13 +220,14 @@ Import specific package modules directly into your Fabric notebooks from GitHub 
 # Cell 1:
 import requests
 
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 url = f"https://raw.githubusercontent.com/enricogoerlitz/fabricengineer-py/refs/tags/{VERSION}/src/fabricengineer/import_module/import_module.py"
 resp = requests.get(url)
 code = resp.text
 
 exec(code, globals())  # This provides the 'import_module' function
 assert code.startswith("import requests")
+assert "def import_module" in code
 
 # Cell 2
 mlv_module = import_module("transform.mlv", VERSION)

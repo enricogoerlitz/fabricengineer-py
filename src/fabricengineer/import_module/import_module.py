@@ -101,6 +101,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from uuid import uuid4
 
+from delta.tables import DeltaTable
 from pyspark.sql import (
     SparkSession,
     DataFrame,
