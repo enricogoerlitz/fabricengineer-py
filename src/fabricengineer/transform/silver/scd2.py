@@ -408,21 +408,33 @@ class SilverIngestionSCD2Service(BaseSilverIngestionServiceImpl):
         if self._is_testing_mock:
             target_path = get_mock_table_path(self._dest_table)
             delta_table = DeltaTable.forPath(self._spark, target_path)
-        else:
-            table_name = self._dest_table.table_path
-            delta_table = DeltaTable.forName(self._spark, table_name)
+            delta_table.alias("target") \
+                .merge(
+                    df_source.alias("source"),
+                    f"target.{self._pk_column_name} = source.{self._pk_column_name}"
+                ) \
+                .whenMatchedUpdate(set={
+                    self._row_update_dts_column: f"source.{self._row_update_dts_column}",
+                    self._row_delete_dts_column: f"source.{self._row_delete_dts_column}",
+                    self._row_is_current_column: f"source.{self._row_is_current_column}"
+                }) \
+                .execute()
+            return
 
-        delta_table.alias("target") \
-            .merge(
-                df_source.alias("source"),
-                f"target.{self._pk_column_name} = source.{self._pk_column_name}"
-            ) \
-            .whenMatchedUpdate(set={
-                self._row_update_dts_column: f"source.{self._row_update_dts_column}",
-                self._row_delete_dts_column: f"source.{self._row_delete_dts_column}",
-                self._row_is_current_column: f"source.{self._row_is_current_column}"
-            }) \
-            .execute()
+        destination_table_path = self._dest_table.table_path
+        view_name = destination_table_path.replace('.', '_').replace('`', '') + "_view"
+        df_source.createOrReplaceTempView(view_name)
+
+        self._spark.sql(f"""
+            MERGE INTO {destination_table_path} AS target
+            USING {view_name} AS source
+            ON target.{self._pk_column_name} = source.{self._pk_column_name}
+            WHEN MATCHED THEN
+            UPDATE SET
+                {self._row_update_dts_column} = source.{self._row_update_dts_column},
+                {self._row_delete_dts_column} = source.{self._row_delete_dts_column},
+                {self._row_is_current_column} = source.{self._row_is_current_column}
+        """)
 
 
 etl = SilverIngestionSCD2Service()
