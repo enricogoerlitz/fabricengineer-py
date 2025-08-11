@@ -1767,7 +1767,7 @@ SELECT
     assert silver_df_1.count() == len(init_data)
 
     # Validate MLV properties and initial code structure
-    assert etl.mlv_name == f"{etl._dest_table.table_path}{etl._mlv_suffix}"
+    assert etl.mlv_name == f"{etl._dest_table.table_path.replace('`', '')}{etl._mlv_suffix}"
     assert expected_mlv_code in etl.mlv_code
 
     # PHASE 2: Schema evolution and MLV code update
