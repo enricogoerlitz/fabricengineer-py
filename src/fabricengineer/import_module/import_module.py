@@ -127,14 +127,18 @@ from pyspark.sql import (
 def _import_module_mlv(base_path: str) -> str:
     """Imports the mlv module from the specified base path."""
     mlv_module = _import_transform_mlv_module(base_path)
+    logger_module = _import_logging_logger_module(base_path)
 
     imports = """
+import logging
+
 from typing import Any
 from pyspark.sql import DataFrame, SparkSession
 """.strip()
 
     code = "\n\n\n".join([
         imports,
+        logger_module,
         mlv_module
     ])
 
