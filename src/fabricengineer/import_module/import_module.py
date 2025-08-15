@@ -130,6 +130,8 @@ def _import_module_mlv(base_path: str) -> str:
     logger_module = _import_logging_logger_module(base_path)
 
     imports = """
+import logging
+
 from typing import Any
 from pyspark.sql import DataFrame, SparkSession
 """.strip()
