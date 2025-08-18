@@ -5,13 +5,31 @@ from fabricengineer.api.fabric.client.workspace import FabricAPIWorkspaceClient
 from fabricengineer.api.auth import MicrosoftExtraSVC
 
 
+def get_env_svc() -> MicrosoftExtraSVC | None:
+    if "notebookutils" in globals():
+        return None
+
+    tenant_id = os.environ.get("MICROSOFT_TENANT_ID")
+    client_id = os.environ.get("SVC_MICROSOFT_FABRIC_CLIENT_ID")
+    client_secret = os.environ.get("SVC_MICROSOFT_FABRIC_SECRET_VALUE")
+
+    if not all([tenant_id, client_id, client_secret]):
+        return None
+
+    return MicrosoftExtraSVC(
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=client_secret
+    )
+
+
 class FabricAPIClient:
     def __init__(
         self,
         msf_svc: MicrosoftExtraSVC = None,
         api_version: str = "v1"
     ):
-        self._msf_svc = msf_svc
+        self._msf_svc = msf_svc or get_env_svc()
         self._base_url = f"https://api.fabric.microsoft.com/{api_version}"
         self.refresh_headers()
         self._workspaces = FabricAPIWorkspaceClient(self)
@@ -84,7 +102,7 @@ class FabricAPIClient:
 
     def _get_token(self) -> str:
         if self._msf_svc is None and "notebookutils" not in globals():
-            return "{TOKEN_NOT_SET}"
+            return ""
         elif "notebookutils" in globals():
             token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")  # noqa: F821 # type: ignore
             return token
@@ -92,26 +110,8 @@ class FabricAPIClient:
         return token
 
 
-def get_svc() -> MicrosoftExtraSVC | None:
-    if "notebookutils" in globals():
-        return None
-
-    tenant_id = os.environ.get("MICROSOFT_TENANT_ID")
-    client_id = os.environ.get("SVC_MICROSOFT_FABRIC_CLIENT_ID")
-    client_secret = os.environ.get("SVC_MICROSOFT_FABRIC_SECRET_VALUE")
-
-    if not all([tenant_id, client_id, client_secret]):
-        return None
-
-    return MicrosoftExtraSVC(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        client_secret=client_secret
-    )
-
-
 global fabric_client
-fabric_client = FabricAPIClient(msf_svc=get_svc(), api_version="v1")
+fabric_client = FabricAPIClient(msf_svc=get_env_svc(), api_version="v1")
 
 
 def set_global_fabric_client(
