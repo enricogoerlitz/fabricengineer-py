@@ -38,6 +38,12 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v
+        env:
+          WORKSPACE_ID: ${{ secrets.WORKSPACE_ID }}
+          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
+          SVC_MICROSOFT_FABRIC_CLIENT_ID: ${{ secrets.SVC_MICROSOFT_FABRIC_CLIENT_ID }}
+          SVC_MICROSOFT_FABRIC_SECRET_VALUE: ${{ secrets.SVC_MICROSOFT_FABRIC_SECRET_VALUE }}
+
 
       # - name: Shut down Docker Compose
       #   if: always()
