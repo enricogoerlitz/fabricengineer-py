@@ -146,7 +146,7 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
             description=description,
             folderId=folder_id,
             definition=definition,
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=VariableLibrary.from_json,
@@ -156,7 +156,7 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         )
 
     @staticmethod
-    def from_json(item: dict) -> "VariableLibraryAPIData":
+    def from_json(item: dict) -> "VariableLibrary":
         kwargs = item.copy()
         if "properties" not in item.keys():
             item["properties"] = {}
@@ -170,18 +170,18 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         )
 
     @staticmethod
-    def get_by_name(workspace_id: str, name: str) -> VariableLibraryAPIData:
+    def get_by_name(workspace_id: str, name: str) -> "VariableLibrary":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=VariableLibrary.from_json,
+            create_item_type_fn=VariableLibrary.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
         )
 
     @staticmethod
-    def get_by_id(workspace_id: str, id: str) -> VariableLibraryAPIData:
+    def get_by_id(workspace_id: str, id: str) -> "VariableLibrary":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=VariableLibrary.from_json,
+            create_item_type_fn=VariableLibrary.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id

@@ -14,11 +14,11 @@ TItemAPIData = TypeVar("TItemAPIData")
 @dataclass
 class FabricItem(Generic[TItemAPIData]):
     fields: dict[str, Any]
-    apiData: Optional[TItemAPIData] = None
+    api: Optional[TItemAPIData] = None
 
-    def __init__(self, apiData: Optional[TItemAPIData] = None, **fields: dict):
+    def __init__(self, api_data: Optional[TItemAPIData] = None, **fields: dict):
         self.fields = fields
-        self.apiData = apiData
+        self.api = api_data
 
 
 class BaseWorkspaceItem(Generic[TItemAPIData]):
@@ -26,8 +26,8 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             self,
             create_type_fn: Callable,
             base_item_url: str,
-            workspace_id: str,
-            item: FabricItem[TItemAPIData]
+            item: FabricItem[TItemAPIData],
+            workspace_id: str = None
     ):
         self._create_item_type_fn = create_type_fn
         self._base_item_url = base_item_url
@@ -40,7 +40,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
     @staticmethod
     def get_by_id(
-            create_type_fn: Callable,
+            create_item_type_fn: Callable,
             workspace_id: str,
             base_item_url: str,
             id: str
@@ -49,11 +49,11 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         resp = fabric_client.workspaces.get(workspace_id, item_path)
         resp.raise_for_status()
         item = resp.json()
-        return create_type_fn(item)
+        return create_item_type_fn(item)
 
     @staticmethod
     def get_by_name(
-            create_type_fn: Callable,
+            create_item_type_fn: Callable,
             workspace_id: str,
             base_item_url: str,
             name: str
@@ -63,7 +63,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         resp.raise_for_status()
         for item in resp.json()["value"]:
             if item["displayName"] == name:
-                return create_type_fn(item)
+                return create_item_type_fn(item)
         raise requests.HTTPError(f"404 Client Error: Item with displayName '{name}' not found")
 
     @staticmethod
@@ -75,26 +75,26 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             yield item
 
     def fetch(self) -> Self:
-        if self._item.apiData is None:
-            self._item.apiData = BaseWorkspaceItem.get_by_name(
-                create_type_fn=self._create_item_type_fn,
+        if self._item.api is None:
+            self._item.api = BaseWorkspaceItem.get_by_name(
+                create_item_type_fn=self._create_item_type_fn,
                 workspace_id=self._workspace_id,
                 base_item_url=self._base_item_url,
                 name=self._item.fields["displayName"]
-            ).item.apiData
+            ).item.api
             return self
 
-        self._item.apiData = BaseWorkspaceItem.get_by_id(
-            create_type_fn=self._create_item_type_fn,
+        self._item.api = BaseWorkspaceItem.get_by_id(
+            create_item_type_fn=self._create_item_type_fn,
             workspace_id=self._workspace_id,
             base_item_url=self._base_item_url,
-            id=self._item.apiData.id
-        ).item.apiData
+            id=self._item.api.id
+        ).item.api
         return self
 
     def exists(self) -> bool:
         try:
-            return self.fetch()._item.apiData is not None
+            return self.fetch()._item.api is not None
         except requests.HTTPError as e:
             if "404 Client Error:" in str(e):
                 return False
@@ -116,7 +116,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         if resp.status_code == 202 and item is None:
             item = self._wait_after_202(resp, payload)
 
-        self._item.apiData = self._create_item_type_fn(item).item.apiData
+        self._item.api = self._create_item_type_fn(item).item.api
         self.fetch()
 
     def create_if_not_exists(self) -> None:
@@ -125,12 +125,12 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         self.create()
 
     def update(self, **fields) -> None:
-        if self._item.apiData is None:
+        if self._item.api is None:
             self.fetch()
 
         self._item.fields.update(fields)
         payload = self._item.fields
-        item_path = f"{self._base_item_url}/{self._item.apiData.id}"
+        item_path = f"{self._base_item_url}/{self._item.api.id}"
         resp = fabric_client.workspaces.patch(
             workspace_id=self._workspace_id,
             item_path=item_path,
@@ -138,14 +138,14 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         )
         resp.raise_for_status()
         item = resp.json()
-        self._item.apiData = self._create_item_type_fn(item).item.apiData
+        self._item.api = self._create_item_type_fn(item).item.api
         self.fetch()
 
     def delete(self) -> None:
-        if self._item.apiData is None:
+        if self._item.api is None:
             self.fetch()
 
-        item_path = f"{self._base_item_url}/{self._item.apiData.id}"
+        item_path = f"{self._base_item_url}/{self._item.api.id}"
         resp = fabric_client.workspaces.delete(
             workspace_id=self._workspace_id,
             item_path=item_path
@@ -185,9 +185,10 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
     def __str__(self) -> str:
         item_str = str(self._item)
+        workspace_id_str = f"workspaceId='{self._workspace_id}', " if self._workspace_id else ""
         item_str_total = (
             f"{self.__class__.__name__}("
-            f"workspaceId='{self._workspace_id}', "
+            f"{workspace_id_str}"
             f"item={item_str}"
         )
         return item_str_total

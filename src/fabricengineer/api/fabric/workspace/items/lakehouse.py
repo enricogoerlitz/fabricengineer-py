@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
-from src.fabricengineer.logging.logger import logger
+from fabricengineer.logging.logger import logger
 
 
 ITEM_PATH = "/lakehouses"
@@ -56,7 +56,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             creationPayload={
                 "enableSchemas": enable_schemas
             },
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=Lakehouse.from_json,
@@ -87,7 +87,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
     @staticmethod
     def get_by_name(workspace_id: str, name: str) -> "Lakehouse":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=Lakehouse.from_json,
+            create_item_type_fn=Lakehouse.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
@@ -96,7 +96,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
     @staticmethod
     def get_by_id(workspace_id: str, id: str) -> "Lakehouse":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=Lakehouse.from_json,
+            create_item_type_fn=Lakehouse.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id
@@ -119,7 +119,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
         retry_after = 5
         retry_sum = 0
         while True:
-            state = self.fetch().item.apiData.properties.sqlEndpointProperties.provisioningStatus
+            state = self.fetch().item.api.properties.sqlEndpointProperties.provisioningStatus
             logger.info(f"Current state: {state}")
             if state != "InProgress":
                 logger.info(f"Lakehouse SQL endpoint provisioning completed with state: {state}.")

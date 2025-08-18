@@ -49,17 +49,17 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
             creationPayload={
                 "collationType": collation_type
             },
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=Warehouse.from_json,
-            base_item_url="/warehouses",
+            base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
             item=item
         )
 
     @staticmethod
-    def from_json(item: dict) -> "WarehouseAPIData":
+    def from_json(item: dict) -> "Warehouse":
         kwargs = item.copy()
         if "properties" not in item.keys():
             item["properties"] = {}
@@ -73,18 +73,18 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
         )
 
     @staticmethod
-    def get_by_name(workspace_id: str, name: str) -> WarehouseAPIData:
+    def get_by_name(workspace_id: str, name: str) -> "Warehouse":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=Warehouse.from_json,
+            create_item_type_fn=Warehouse.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
         )
 
     @staticmethod
-    def get_by_id(workspace_id: str, id: str) -> WarehouseAPIData:
+    def get_by_id(workspace_id: str, id: str) -> "Warehouse":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=Warehouse.from_json,
+            create_item_type_fn=Warehouse.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id

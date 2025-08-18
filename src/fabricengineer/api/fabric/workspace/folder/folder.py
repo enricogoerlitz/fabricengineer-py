@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
+from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
 
 
 @dataclass
@@ -28,7 +28,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
         item = FabricItem[WorkspaceFolderAPIData](
             displayName=name,
             parentFolderId=folder_id,
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=WorkspaceFolder.from_json,
@@ -50,7 +50,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
     @staticmethod
     def get_by_name(workspace_id: str, name: str) -> "WorkspaceFolder":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=WorkspaceFolder.from_json,
+            create_item_type_fn=WorkspaceFolder.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
@@ -59,7 +59,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
     @staticmethod
     def get_by_id(workspace_id: str, id: str) -> "WorkspaceFolder":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=WorkspaceFolder.from_json,
+            create_item_type_fn=WorkspaceFolder.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id
