@@ -1,0 +1,658 @@
+{
+    "properties": {
+        "activities": [
+            {
+                "name": "Import metadata",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "AzureBlobStorageReadSettings",
+                            "recursive": false,
+                            "enablePartitionDiscovery": false
+                        },
+                        "formatSettings": {
+                            "type": "JsonReadSettings"
+                        }
+                    },
+                    "datasetSettings": {
+                        "annotations": [],
+                        "type": "Json",
+                        "typeProperties": {
+                            "location": {
+                                "type": "AzureBlobStorageLocation",
+                                "fileName": {
+                                    "value": "@pipeline().parameters.ImportMetadataFilename",
+                                    "type": "Expression"
+                                },
+                                "folderPath": {
+                                    "value": "@concat(\n    pipeline().libraryVariables.Environment,\n    '/meta/pipelines/import'\n)",
+                                    "type": "Expression"
+                                },
+                                "container": "fabric-metadata"
+                            }
+                        },
+                        "schema": {},
+                        "externalReferences": {
+                            "connection": "[parameters('BLOB_FABRIC_METADATA_PROD')]"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "Set DayOfWeek",
+                "type": "SetVariable",
+                "dependsOn": [],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "variableName": "DayOfWeekGerman",
+                    "value": {
+                        "value": "@if(\n    equals(dayOfWeek(utcNow()), 0), 'Sonntag',\n    if(equals(dayOfWeek(utcNow()), 1), 'Montag',\n        if(equals(dayOfWeek(utcNow()), 2), 'Dienstag',\n            if(equals(dayOfWeek(utcNow()), 3), 'Mittwoch',\n                if(equals(dayOfWeek(utcNow()), 4), 'Donnerstag',\n                    if(equals(dayOfWeek(utcNow()), 5), 'Freitag',\n                        'Samstag'\n                    )\n                )\n            )\n        )\n    )\n)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Set IsFullLoadDay",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "Set DayOfWeek",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "variableName": "IsFullLoadDay",
+                    "value": {
+                        "value": "@not(\n    equals(\n        indexof(\n            pipeline().parameters.FullLoadDays,\n            variables('DayOfWeekGerman')\n        ),\n        -1\n    )\n)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Filter tables run is true",
+                "type": "Filter",
+                "dependsOn": [
+                    {
+                        "activity": "Filter selected tables",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Filter selected tables').output.Value",
+                        "type": "Expression"
+                    },
+                    "condition": {
+                        "value": "@equals(item().run, true)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Import tables",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Filter tables run is true",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Set IsFullLoadDay",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Filter tables run is true').output.value",
+                        "type": "Expression"
+                    },
+                    "batchCount": 10,
+                    "activities": [
+                        {
+                            "name": "Get delta load config",
+                            "type": "IfCondition",
+                            "dependsOn": [],
+                            "typeProperties": {
+                                "expression": {
+                                    "value": "@equals(\n    and(\n        coalesce(\n            item()?.deltaLoad?.enable,\n            false\n        ),\n        not(coalesce(variables('IsFullLoadDay'), true))\n    ),\n    true\n)",
+                                    "type": "Expression"
+                                },
+                                "ifFalseActivities": [],
+                                "ifTrueActivities": [
+                                    {
+                                        "name": "Get delta datetime",
+                                        "type": "Lookup",
+                                        "dependsOn": [],
+                                        "policy": {
+                                            "timeout": "0.12:00:00",
+                                            "retry": 1,
+                                            "retryIntervalInSeconds": 30,
+                                            "secureOutput": false,
+                                            "secureInput": false
+                                        },
+                                        "typeProperties": {
+                                            "source": {
+                                                "type": "DataWarehouseSource",
+                                                "sqlReaderStoredProcedureName": {
+                                                    "value": "[[etl].[prc_GetMaxDeltaDatetimeDefault]",
+                                                    "type": "Expression"
+                                                },
+                                                "storedProcedureParameters": {
+                                                    "deltaColumn": {
+                                                        "type": "String",
+                                                        "value": {
+                                                            "value": "@item().deltaLoad.deltaColumn",
+                                                            "type": "Expression"
+                                                        }
+                                                    },
+                                                    "lakehouse": {
+                                                        "type": "String",
+                                                        "value": {
+                                                            "value": "@pipeline().libraryVariables.SilverLakehouseName",
+                                                            "type": "Expression"
+                                                        }
+                                                    },
+                                                    "schema": {
+                                                        "type": "String",
+                                                        "value": {
+                                                            "value": "@coalesce(\n    item().bronze?.schema,\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.dataHub?.defaultSchema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                                            "type": "Expression"
+                                                        }
+                                                    },
+                                                    "tablename": {
+                                                        "type": "String",
+                                                        "value": {
+                                                            "value": "@coalesce(\n    item().bronze?.tablename,\n    item().source.tablename\n)",
+                                                            "type": "Expression"
+                                                        }
+                                                    }
+                                                },
+                                                "queryTimeout": "02:00:00",
+                                                "partitionOption": "None"
+                                            },
+                                            "datasetSettings": {
+                                                "annotations": [],
+                                                "linkedService": {
+                                                    "name": "fdf0ef98_8b31_49d3_8b37_c3c58ee1fe80",
+                                                    "properties": {
+                                                        "annotations": [],
+                                                        "type": "DataWarehouse",
+                                                        "typeProperties": {
+                                                            "endpoint": "@pipeline().libraryVariables.WorkspaceSqlEndpoint",
+                                                            "artifactId": "@pipeline().libraryVariables.UtilsWarehouseId",
+                                                            "workspaceId": "@pipeline().libraryVariables.WorkspaceId"
+                                                        }
+                                                    }
+                                                },
+                                                "type": "DataWarehouseTable",
+                                                "schema": [],
+                                                "typeProperties": {}
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "name": "Load data",
+                            "type": "IfCondition",
+                            "dependsOn": [
+                                {
+                                    "activity": "Get delta load config",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "typeProperties": {
+                                "expression": {
+                                    "value": "@and(\n    not(\n        equals(\n            coalesce(\n                activity('Get delta datetime')?.output?.firstRow?.delta_datetime,\n                'NO DELTALOAD'\n            ),\n            'NO DELTALOAD'\n        )\n    ),\n    not(coalesce(variables('IsFullLoadDay'), true))\n)",
+                                    "type": "Expression"
+                                },
+                                "ifFalseActivities": [
+                                    {
+                                        "name": "Full load",
+                                        "type": "Copy",
+                                        "dependsOn": [],
+                                        "policy": {
+                                            "timeout": "0.12:00:00",
+                                            "retry": 1,
+                                            "retryIntervalInSeconds": 30,
+                                            "secureOutput": false,
+                                            "secureInput": false
+                                        },
+                                        "typeProperties": {
+                                            "source": {
+                                                "type": "FabricSqlDatabaseSource",
+                                                "queryTimeout": "02:00:00",
+                                                "partitionOption": "None",
+                                                "datasetSettings": {
+                                                    "annotations": [],
+                                                    "connectionSettings": {
+                                                        "name": "SourceDatabase",
+                                                        "properties": {
+                                                            "annotations": [],
+                                                            "type": "FabricSqlDatabase",
+                                                            "typeProperties": {
+                                                                "workspaceId": "7fab2a38-d1d4-430b-9f27-a78d6666913e",
+                                                                "artifactId": "[parameters('SourceDatabase')]"
+                                                            },
+                                                            "externalReferences": {
+                                                                "connection": "11fed989-8e3a-4556-8807-23e2165e46e0"
+                                                            }
+                                                        }
+                                                    },
+                                                    "type": "FabricSqlDatabaseTable",
+                                                    "schema": [],
+                                                    "typeProperties": {
+                                                        "schema": {
+                                                            "value": "@coalesce(\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                                            "type": "Expression"
+                                                        },
+                                                        "table": {
+                                                            "value": "@item().source.tablename",
+                                                            "type": "Expression"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "sink": {
+                                                "type": "LakehouseTableSink",
+                                                "tableActionOption": "OverwriteSchema",
+                                                "partitionOption": "None",
+                                                "datasetSettings": {
+                                                    "annotations": [],
+                                                    "linkedService": {
+                                                        "name": "81d535bf_bcc9_4ac8_a402_d5db7fadced5",
+                                                        "properties": {
+                                                            "annotations": [],
+                                                            "type": "Lakehouse",
+                                                            "typeProperties": {
+                                                                "workspaceId": "@pipeline().libraryVariables.WorkspaceId",
+                                                                "artifactId": "@pipeline().libraryVariables.BronzeLakehouseId",
+                                                                "rootFolder": "Tables",
+                                                                "servicePrincipalCredential": {
+                                                                    "type": "SecureString",
+                                                                    "value": "**********"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "type": "LakehouseTable",
+                                                    "schema": [],
+                                                    "typeProperties": {
+                                                        "schema": {
+                                                            "value": "@coalesce(\n    item().bronze?.schema,\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.dataHub?.defaultSchema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                                            "type": "Expression"
+                                                        },
+                                                        "table": {
+                                                            "value": "@coalesce(     item().bronze?.tablename,     item().source.tablename )",
+                                                            "type": "Expression"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "enableStaging": false,
+                                            "translator": {
+                                                "type": "TabularTranslator",
+                                                "typeConversion": true,
+                                                "typeConversionSettings": {
+                                                    "allowDataTruncation": true,
+                                                    "treatBooleanAsNumber": false
+                                                }
+                                            }
+                                        }
+                                    }
+                                ],
+                                "ifTrueActivities": [
+                                    {
+                                        "name": "Delta load",
+                                        "type": "Copy",
+                                        "dependsOn": [],
+                                        "policy": {
+                                            "timeout": "0.12:00:00",
+                                            "retry": 1,
+                                            "retryIntervalInSeconds": 30,
+                                            "secureOutput": false,
+                                            "secureInput": false
+                                        },
+                                        "typeProperties": {
+                                            "source": {
+                                                "type": "FabricSqlDatabaseSource",
+                                                "sqlReaderQuery": {
+                                                    "value": "@concat(\n    'SELECT * FROM ',\n    coalesce(\n        item().source?.schema,\n        activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n    ),\n    '.',\n    item().source.tablename,\n    ' WHERE ',\n    item().deltaLoad.deltaColumn,\n    ' > ''',\n    activity('Get delta datetime').output.firstRow.delta_datetime,\n    ''''\n)",
+                                                    "type": "Expression"
+                                                },
+                                                "queryTimeout": "02:00:00",
+                                                "partitionOption": "None",
+                                                "datasetSettings": {
+                                                    "annotations": [],
+                                                    "connectionSettings": {
+                                                        "name": "SourceDatabase",
+                                                        "properties": {
+                                                            "annotations": [],
+                                                            "type": "FabricSqlDatabase",
+                                                            "typeProperties": {
+                                                                "workspaceId": "7fab2a38-d1d4-430b-9f27-a78d6666913e",
+                                                                "artifactId": "[parameters('SourceDatabase')]"
+                                                            },
+                                                            "externalReferences": {
+                                                                "connection": "11fed989-8e3a-4556-8807-23e2165e46e0"
+                                                            }
+                                                        }
+                                                    },
+                                                    "type": "FabricSqlDatabaseTable",
+                                                    "schema": [],
+                                                    "typeProperties": {}
+                                                }
+                                            },
+                                            "sink": {
+                                                "type": "LakehouseTableSink",
+                                                "tableActionOption": "OverwriteSchema",
+                                                "partitionOption": "None",
+                                                "datasetSettings": {
+                                                    "annotations": [],
+                                                    "linkedService": {
+                                                        "name": "5f204f8d_76db_4448_a926_226ca7afa99d",
+                                                        "properties": {
+                                                            "annotations": [],
+                                                            "type": "Lakehouse",
+                                                            "typeProperties": {
+                                                                "workspaceId": "@pipeline().libraryVariables.WorkspaceId",
+                                                                "artifactId": "@pipeline().libraryVariables.BronzeLakehouseId",
+                                                                "rootFolder": "Tables",
+                                                                "servicePrincipalCredential": {
+                                                                    "type": "SecureString",
+                                                                    "value": "**********"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "type": "LakehouseTable",
+                                                    "schema": [],
+                                                    "typeProperties": {
+                                                        "schema": {
+                                                            "value": "@coalesce(\n    item().bronze?.schema,\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.dataHub?.defaultSchema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                                            "type": "Expression"
+                                                        },
+                                                        "table": {
+                                                            "value": "@coalesce(\n    item().bronze?.tablename,\n    item().source.tablename\n)",
+                                                            "type": "Expression"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "enableStaging": false,
+                                            "translator": {
+                                                "type": "TabularTranslator",
+                                                "typeConversion": true,
+                                                "typeConversionSettings": {
+                                                    "allowDataTruncation": true,
+                                                    "treatBooleanAsNumber": false
+                                                }
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "name": "Silver ingestion",
+                            "type": "TridentNotebook",
+                            "dependsOn": [
+                                {
+                                    "activity": "Load data",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "typeProperties": {
+                                "notebookId": "7b802985-3115-42ae-b16f-d00710090d42",
+                                "workspaceId": "cda6017a-597f-41d1-9176-fb2f1aefae2c",
+                                "parameters": {
+                                    "SOURCE_LAKEHOUSE": {
+                                        "value": {
+                                            "value": "@pipeline().libraryVariables.BronzeLakehouseName",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "SOURCE_SCHEMA": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().bronze?.schema,\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.dataHub?.defaultSchema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "SOURCE_TABLENAME": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().bronze?.tablename,\n    item().source?.tablename\n)\n",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "DESTINATION_LAKEHOUSE": {
+                                        "value": {
+                                            "value": "@pipeline().libraryVariables.SilverLakehouseName",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "DESTINATION_SCHEMA": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().silver.notebook?.schema,\n    item().bronze?.schema,\n    item().source?.schema,\n    activity('Import metadata').output.firstRow.importSettings.dataHub?.defaultSchema,\n    activity('Import metadata').output.firstRow.importSettings.sourceSystem.defaultSchema\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "DESTINATION_TABLENAME": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().silver?.notebook?.tablename,\n    item().bronze?.tablename,\n    item().source.tablename\n)\n",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "NK_COLUMNS": {
+                                        "value": {
+                                            "value": "@item().silver.notebook.nk_columns",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "EXCLUDE_COLUMNS_FROM_COMPARING": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().silver.notebook?.exclude_columns_from_comparing,\n    null\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "INCLUDE_COLUMNS_AT_COMPARING": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().silver.notebook?.include_columns_at_comparing,\n    null\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    },
+                                    "HISTORIZE": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item()?.historize,\n    true\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "bool"
+                                    },
+                                    "IS_DELTA_LOAD": {
+                                        "value": {
+                                            "value": "@and(\n    not(\n        equals(\n            coalesce(\n                activity('Get delta datetime')?.output?.firstRow?.delta_datetime,\n                'NO DELTALOAD'\n            ),\n            'NO DELTALOAD'\n        )\n    ),\n    not(coalesce(variables('IsFullLoadDay'), true))\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "bool"
+                                    },
+                                    "DELTA_LOAD_USE_BROADCAST": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item()?.deltaLoad?.useBroadcast,\n    false\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "bool"
+                                    },
+                                    "PARTITION_BY_COLUMNS": {
+                                        "value": {
+                                            "value": "@coalesce(\n    item().silver.notebook?.partition_by,\n    null\n)",
+                                            "type": "Expression"
+                                        },
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Filter selected tables",
+                "type": "Filter",
+                "dependsOn": [
+                    {
+                        "activity": "Set ImportTableNames",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Import metadata').output.firstRow.tables",
+                        "type": "Expression"
+                    },
+                    "condition": {
+                        "value": "@if(\n    equals(pipeline().parameters.SelectedTables, null),\n    true,\n    contains(\n        variables('ImportTableNames'),\n        item().source.tablename\n    )\n)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Set ImportTableNames",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "Import metadata",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "variableName": "ImportTableNames",
+                    "value": {
+                        "value": "@split(\n    coalesce(pipeline().parameters.SelectedTables, ''),\n    ','\n)",
+                        "type": "Expression"
+                    }
+                }
+            }
+        ],
+        "parameters": {
+            "ImportMetadataFilename": {
+                "type": "string",
+                "defaultValue": "metadata.import.saleslt.v1.json"
+            },
+            "SelectedTables": {
+                "type": "string"
+            },
+            "FullLoadDays": {
+                "type": "string",
+                "defaultValue": "Sonntag"
+            }
+        },
+        "variables": {
+            "IsFullLoadDay": {
+                "type": "Boolean"
+            },
+            "DayOfWeekGerman": {
+                "type": "String"
+            },
+            "ImportTableNames": {
+                "type": "Array"
+            }
+        },
+        "libraryVariables": {
+            "Environment": {
+                "type": "String",
+                "variableName": "Environment",
+                "libraryName": "Workspace"
+            },
+            "WorkspaceId": {
+                "type": "String",
+                "variableName": "Id",
+                "libraryName": "Workspace"
+            },
+            "WorkspaceSqlEndpoint": {
+                "type": "String",
+                "variableName": "SqlEndpoint",
+                "libraryName": "Workspace"
+            },
+            "UtilsWarehouseId": {
+                "type": "String",
+                "variableName": "Id",
+                "libraryName": "UtilsWarehouseSales"
+            },
+            "BronzeLakehouseId": {
+                "type": "String",
+                "variableName": "Id",
+                "libraryName": "BronzeLakehouseSalesLT"
+            },
+            "BronzeLakehouseName": {
+                "type": "String",
+                "variableName": "Name",
+                "libraryName": "BronzeLakehouseSalesLT"
+            },
+            "SilverLakehouseId": {
+                "type": "String",
+                "variableName": "Id",
+                "libraryName": "SilverLakehouseSalesLT"
+            },
+            "SilverLakehouseName": {
+                "type": "String",
+                "variableName": "Name",
+                "libraryName": "SilverLakehouseSalesLT"
+            }
+        },
+        "lastModifiedByObjectId": "597c557f-11ad-45ae-a7c7-f55b30b60c38",
+        "lastPublishTime": "2025-08-14T17:39:24Z"
+    }
+}
