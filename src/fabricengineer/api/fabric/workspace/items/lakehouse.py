@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
+from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
 from fabricengineer.logging.logger import logger
 
 
@@ -26,12 +26,7 @@ class LakehouseProperties:
 
 
 @dataclass
-class LakehouseAPIData:
-    id: str
-    workspaceId: str
-    displayName: str
-    description: Optional[str]
-    type: str
+class LakehouseAPIData(BaseItemAPIData):
     properties: LakehouseProperties = field(default_factory=LakehouseProperties)
 
 
@@ -103,7 +98,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
         )
 
     @staticmethod
-    def list(workspace_id: str) -> list[LakehouseAPIData]:
+    def list(workspace_id: str) -> list["Lakehouse"]:
         return [
             Lakehouse.from_json(item)
             for item in BaseWorkspaceItem.list(

@@ -1,8 +1,13 @@
 from typing import Optional, Any
 from dataclasses import dataclass, field, asdict
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
 from fabricengineer.api.utils import base64_encode
+from fabricengineer.api.fabric.workspace.items.base import (
+    BaseWorkspaceItem,
+    BaseItemAPIData,
+    FabricItem,
+    ItemDefinitionInterface
+)
 
 
 ITEM_PATH = "/VariableLibraries"
@@ -14,12 +19,7 @@ class VariableLibraryProperties:
 
 
 @dataclass
-class VariableLibraryAPIData:
-    id: str
-    workspaceId: str
-    displayName: str
-    description: Optional[str]
-    type: Optional[str]
+class VariableLibraryAPIData(BaseItemAPIData):
     properties: VariableLibraryProperties = field(default_factory=VariableLibraryProperties)
 
 
@@ -31,7 +31,7 @@ class VariableLibraryVariable:
     value: Any
 
 
-class VariableLibraryDefinition:
+class VariableLibraryDefinition(ItemDefinitionInterface):
     def __init__(
             self,
             variable_lib_name: str,
@@ -46,7 +46,7 @@ class VariableLibraryDefinition:
     def name(self) -> str:
         return self._var_lib_name
 
-    def to_definition(self) -> dict:
+    def get_definition(self) -> dict:
         variables = self._serialize_variables()
         variables_data = self._build_variables_data(variables)
         settings_data = self._build_settings_data()
@@ -136,10 +136,10 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         name: str,
         description: str = None,
         folder_id: str = None,
-        definition: VariableLibraryDefinition = None,
+        definition: ItemDefinitionInterface = None,
         api_data: VariableLibraryAPIData = None
     ):
-        definition = definition.to_definition() if isinstance(definition, VariableLibraryDefinition) else None
+        definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New VariableLibrary"
         item = FabricItem[VariableLibraryAPIData](
             displayName=name,
@@ -188,7 +188,7 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         )
 
     @staticmethod
-    def list(workspace_id: str) -> list[VariableLibraryAPIData]:
+    def list(workspace_id: str) -> list["VariableLibrary"]:
         return [
             VariableLibrary.from_json(item)
             for item in BaseWorkspaceItem.list(

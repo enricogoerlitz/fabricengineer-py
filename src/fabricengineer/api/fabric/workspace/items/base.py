@@ -1,14 +1,25 @@
 import requests
 import time
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Generic, TypeVar, Any, Self, Iterator, Callable
+from typing import Optional, Generic, TypeVar, Any, Iterator, Callable
 
 from fabricengineer.api.fabric.client.fabric import fabric_client
+from fabricengineer.api.utils import http_wait_for_completion_after_202
 from fabricengineer.logging.logger import logger
 
 
 TItemAPIData = TypeVar("TItemAPIData")
+
+
+@dataclass
+class BaseItemAPIData:
+    id: str
+    workspaceId: str
+    displayName: str
+    description: str
+    type: str
 
 
 @dataclass
@@ -19,6 +30,25 @@ class FabricItem(Generic[TItemAPIData]):
     def __init__(self, api_data: Optional[TItemAPIData] = None, **fields: dict):
         self.fields = fields
         self.api = api_data
+
+
+class ItemDefinitionInterface(ABC):
+    @abstractmethod
+    def get_definition(self) -> dict: pass
+
+
+class CopyItemDefinition(ItemDefinitionInterface):
+    def __init__(self, workspace_id: str, id: str, item_uri_name: str):
+        self._wid = workspace_id
+        self._id = id
+        self._item_uri_name = item_uri_name
+
+    def get_definition(self) -> dict:
+        url = f"/workspaces/{self._wid}/{self._item_uri_name}/{self._id}/getDefinition"
+        resp = fabric_client.post(url, payload={})
+        resp.raise_for_status()
+        definition = http_wait_for_completion_after_202(resp, retry_max_seconds=1)
+        return definition["definition"]
 
 
 class BaseWorkspaceItem(Generic[TItemAPIData]):
@@ -74,7 +104,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         for item in resp.json()["value"]:
             yield item
 
-    def fetch(self) -> Self:
+    def fetch(self) -> "BaseWorkspaceItem":
         if self._item.api is None:
             self._item.api = BaseWorkspaceItem.get_by_name(
                 create_item_type_fn=self._create_item_type_fn,
@@ -91,6 +121,16 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             id=self._item.api.id
         ).item.api
         return self
+
+    def fetch_definition(self) -> dict:
+        if self._item.api is None:
+            self.fetch()
+        url = f"{self._base_item_url}/{self._item.api.id}/getDefinition"
+        resp = fabric_client.workspaces.post(self._workspace_id, url, payload={})
+        resp.raise_for_status()
+        if resp.status_code == 202:
+            return http_wait_for_completion_after_202(resp, retry_max_seconds=1)
+        return resp.json()
 
     def exists(self) -> bool:
         try:
@@ -114,7 +154,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
         item = resp.json()
         if resp.status_code == 202 and item is None:
-            item = self._wait_after_202(resp, payload)
+            item = http_wait_for_completion_after_202(resp, payload)
 
         self._item.api = self._create_item_type_fn(item).item.api
         self.fetch()
@@ -159,7 +199,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         logger.info(f"Status=202, Operation ID: {op_id}, Location: {op_location}, Retry after: {retry}s")
 
         retry_sum = 0
-        warehouse = None
+        obj = None
         while True:
             time.sleep(retry)
             resp_retry = requests.get(op_location, headers=fabric_client.headers)
@@ -167,7 +207,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             if resp_retry.json()["status"] == "Succeeded":
                 res = requests.get(resp_retry.headers["Location"], headers=fabric_client.headers)
                 res.raise_for_status()
-                warehouse = res.json()
+                obj = res.json()
                 break
 
             retry = self._retry_after(resp_retry)
@@ -178,7 +218,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
             logger.info(f"Wait for more {retry}s")
 
-        return warehouse
+        return obj
 
     def _retry_after(self, resp: requests.Response) -> int:
         return min(int(resp.headers.get("Retry-After", 5)), 5)
