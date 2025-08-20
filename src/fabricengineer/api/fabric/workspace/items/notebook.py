@@ -16,6 +16,12 @@ from fabricengineer.api.fabric.workspace.items.base import (
 ITEM_PATH = "/notebooks"
 
 
+def read_ipynb_notebook(file_path: str) -> dict:
+    with open(file_path, "r") as f:
+        notebook_content = json.load(f)
+    return notebook_content
+
+
 @dataclass
 class NotebookAPIData(BaseItemAPIData):
     pass

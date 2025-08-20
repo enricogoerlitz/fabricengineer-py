@@ -1,0 +1,152 @@
+import json
+import zipfile
+
+from dataclasses import dataclass
+
+from fabricengineer.api.fabric.workspace.items.base import (
+    BaseWorkspaceItem,
+    BaseItemAPIData,
+    FabricItem,
+    ItemDefinitionInterface,
+    CopyItemDefinition
+)
+from fabricengineer.api.utils import base64_encode
+
+
+ITEM_PATH = "/dataPipelines"
+
+
+def read_zip_pipeline_json(zip_filepath: str):
+    with zipfile.ZipFile(zip_filepath, "r") as zf:
+        pipeline_file = [f for f in zf.namelist() if f.endswith(".json") and "manifest.json" not in f]
+        assert len(pipeline_file) == 1, "Es sollte genau eine JSON-Datei im ZIP sein."
+        pipeline_file = pipeline_file[0]
+        with zf.open(pipeline_file) as f:
+            pipeline_json = json.load(f)
+            print(pipeline_json)
+
+    assert "resources" in pipeline_json, "Die JSON-Datei muss 'resources' enthalten."
+    assert len(pipeline_json["resources"]) == 1, "Die JSON-Datei muss mindestens eine Ressource enthalten."
+    resource = pipeline_json["resources"][0]
+    assert "properties" in resource, "Die Ressource muss 'properties' enthalten."
+    return {
+        "properties": resource["properties"]
+    }
+
+
+@dataclass
+class DataPipelineAPIData(BaseItemAPIData):
+    pass
+
+
+class CopyDataPipelineDefinition(CopyItemDefinition):
+    def __init__(self, workspace_id: str, pipeline_id: str):
+        super().__init__(
+            workspace_id=workspace_id,
+            id=pipeline_id,
+            item_uri_name="dataPipelines"
+        )
+
+
+class ZIPDataPipelineDefinition(ItemDefinitionInterface):
+    def __init__(self, pipeline_json: str):
+        self._pipeline_json = pipeline_json
+
+    def get_definition(self) -> dict:
+        pipeline_json_b64 = base64_encode(self._pipeline_json)
+        platform_payload_b64 = base64_encode({
+            "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+            "metadata": {
+                "type": "DataPipeline",
+                "displayName": "pipelineX",
+                "description": "A Description"
+            },
+            "config": {
+                "version": "2.0",
+                "logicalId": "00000000-0000-0000-0000-000000000000"
+            }
+        })
+
+        return {
+            "parts": [
+                {
+                    "path": "pipeline-content.json",
+                    "payload": pipeline_json_b64,
+                    "payloadType": "InlineBase64"
+                },
+                {
+                    "path": ".platform",
+                    "payload": platform_payload_b64,
+                    "payloadType": "InlineBase64"
+                }
+            ]
+        }
+
+
+class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
+    """
+    REF: https://learn.microsoft.com/en-us/rest/api/fabric/datapipeline/items
+    """
+    def __init__(
+        self,
+        workspace_id: str,
+        name: str,
+        description: str = None,
+        folder_id: str = None,
+        definition: ItemDefinitionInterface = None,
+        api_data: DataPipelineAPIData = None
+    ):
+        definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
+        description = description or "New Data Pipeline"
+        item = FabricItem[DataPipelineAPIData](
+            displayName=name,
+            description=description,
+            folderId=folder_id,
+            definition=definition,
+            apiData=api_data
+        )
+        super().__init__(
+            create_type_fn=DataPipeline.from_json,
+            base_item_url=ITEM_PATH,
+            workspace_id=workspace_id,
+            item=item
+        )
+
+    @staticmethod
+    def from_json(item: dict) -> "DataPipeline":
+        kwargs = item.copy()
+        api_data = DataPipelineAPIData(**kwargs)
+        return DataPipeline(
+            workspace_id=api_data.workspaceId,
+            name=api_data.displayName,
+            description=api_data.description,
+            api_data=api_data
+        )
+
+    @staticmethod
+    def get_by_name(workspace_id: str, name: str) -> "DataPipeline":
+        return BaseWorkspaceItem.get_by_name(
+            create_fn=DataPipeline.from_json,
+            workspace_id=workspace_id,
+            base_item_url=ITEM_PATH,
+            name=name
+        )
+
+    @staticmethod
+    def get_by_id(workspace_id: str, id: str) -> "DataPipeline":
+        return BaseWorkspaceItem.get_by_id(
+            create_fn=DataPipeline.from_json,
+            workspace_id=workspace_id,
+            base_item_url=ITEM_PATH,
+            id=id
+        )
+
+    @staticmethod
+    def list(workspace_id: str) -> list["DataPipeline"]:
+        return [
+            DataPipeline.from_json(item)
+            for item in BaseWorkspaceItem.list(
+                workspace_id=workspace_id,
+                base_item_url=ITEM_PATH
+            )
+        ]

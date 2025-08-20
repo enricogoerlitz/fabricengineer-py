@@ -24,20 +24,6 @@ def base64_encode(obj: dict | str | bytes | bytearray) -> str:
     return base64.b64encode(obj).decode("ascii")
 
 
-def base64_encode_zip(filepath: str) -> str:
-    with open(filepath, "rb") as zf:
-        zip_bytes = zf.read()
-    return base64_encode(zip_bytes)
-
-
-# def base64_encode_zip(filepath: str) -> str:
-#     with zipfile.ZipFile(filepath, "r") as zf:
-#         zip_bytes = io.BytesIO()
-#         for name in zf.namelist():
-#             zip_bytes.write(zf.read(name))
-#         return base64_encode(zip_bytes.getvalue())
-
-
 def base64_decode(obj_str: str):
     decoded = base64.b64decode(obj_str).decode("utf-8")
     return decoded
