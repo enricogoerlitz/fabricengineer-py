@@ -1,5 +1,4 @@
 import requests
-import time
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -7,7 +6,6 @@ from typing import Optional, Generic, TypeVar, Any, Iterator, Callable
 
 from fabricengineer.api.fabric.client.fabric import fabric_client
 from fabricengineer.api.utils import http_wait_for_completion_after_202
-from fabricengineer.logging.logger import logger
 
 
 TItemAPIData = TypeVar("TItemAPIData")
@@ -45,7 +43,7 @@ class CopyItemDefinition(ItemDefinitionInterface):
 
     def get_definition(self) -> dict:
         url = f"/workspaces/{self._wid}/{self._item_uri_name}/{self._id}/getDefinition"
-        resp = fabric_client.post(url, payload={})
+        resp = fabric_client().post(url, payload={})
         resp.raise_for_status()
         definition = http_wait_for_completion_after_202(resp, retry_max_seconds=1)
         return definition["definition"]
@@ -76,7 +74,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             id: str
     ) -> Any:
         item_path = f"{base_item_url}/{id}"
-        resp = fabric_client.workspaces.get(workspace_id, item_path)
+        resp = fabric_client().workspaces.get(workspace_id, item_path)
         resp.raise_for_status()
         item = resp.json()
         return create_item_type_fn(item)
@@ -89,7 +87,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             name: str
     ) -> Any:
         item_path = base_item_url
-        resp = fabric_client.workspaces.get(workspace_id, item_path)
+        resp = fabric_client().workspaces.get(workspace_id, item_path)
         resp.raise_for_status()
         for item in resp.json()["value"]:
             if item["displayName"] == name:
@@ -99,7 +97,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
     @staticmethod
     def list(workspace_id: str, base_item_url: str) -> Iterator[dict]:
         item_path = base_item_url
-        resp = fabric_client.workspaces.get(workspace_id, item_path)
+        resp = fabric_client().workspaces.get(workspace_id, item_path)
         resp.raise_for_status()
         for item in resp.json()["value"]:
             yield item
@@ -126,7 +124,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         if self._item.api is None:
             self.fetch()
         url = f"{self._base_item_url}/{self._item.api.id}/getDefinition"
-        resp = fabric_client.workspaces.post(self._workspace_id, url, payload={})
+        resp = fabric_client().workspaces.post(self._workspace_id, url, payload={})
         resp.raise_for_status()
         if resp.status_code == 202:
             return http_wait_for_completion_after_202(resp, retry_max_seconds=1)
@@ -145,11 +143,12 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
     def create(self) -> None:
         item_path = self._base_item_url
         payload = self._item.fields
-        resp = fabric_client.workspaces.post(
+        resp = fabric_client().workspaces.post(
             workspace_id=self._workspace_id,
             item_path=item_path,
             payload=payload
         )
+        print("RESP:", resp.json())
         resp.raise_for_status()
 
         item = resp.json()
@@ -171,7 +170,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         self._item.fields.update(fields)
         payload = self._item.fields
         item_path = f"{self._base_item_url}/{self._item.api.id}"
-        resp = fabric_client.workspaces.patch(
+        resp = fabric_client().workspaces.patch(
             workspace_id=self._workspace_id,
             item_path=item_path,
             payload=payload
@@ -186,39 +185,11 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             self.fetch()
 
         item_path = f"{self._base_item_url}/{self._item.api.id}"
-        resp = fabric_client.workspaces.delete(
+        resp = fabric_client().workspaces.delete(
             workspace_id=self._workspace_id,
             item_path=item_path
         )
         resp.raise_for_status()
-
-    def _wait_after_202(self, resp: requests.Response, payload: dict, timeout: int = 90) -> requests.Response:
-        op_id = resp.headers["x-ms-operation-id"]
-        op_location = resp.headers["Location"]
-        retry = self._retry_after(resp)
-        logger.info(f"Status=202, Operation ID: {op_id}, Location: {op_location}, Retry after: {retry}s")
-
-        retry_sum = 0
-        obj = None
-        while True:
-            time.sleep(retry)
-            resp_retry = requests.get(op_location, headers=fabric_client.headers)
-
-            if resp_retry.json()["status"] == "Succeeded":
-                res = requests.get(resp_retry.headers["Location"], headers=fabric_client.headers)
-                res.raise_for_status()
-                obj = res.json()
-                break
-
-            retry = self._retry_after(resp_retry)
-            retry_sum += retry
-            if retry_sum > timeout:
-                logger.warning(f"Timeout after {timeout}s")
-                raise TimeoutError(f"Timeout while waiting for item creation. Payload: {payload}")
-
-            logger.info(f"Wait for more {retry}s")
-
-        return obj
 
     def _retry_after(self, resp: requests.Response) -> int:
         return min(int(resp.headers.get("Retry-After", 5)), 5)

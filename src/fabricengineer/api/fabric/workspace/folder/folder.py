@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
+from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, FabricItem
 
 
 @dataclass

@@ -2,7 +2,7 @@ from typing import Optional, Any
 from dataclasses import dataclass, field, asdict
 
 from fabricengineer.api.utils import base64_encode
-from fabricengineer.api.fabric.workspace.items.base import (
+from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,

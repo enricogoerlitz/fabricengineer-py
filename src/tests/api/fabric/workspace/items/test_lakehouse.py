@@ -1,0 +1,140 @@
+import pytest
+import uuid
+import requests
+
+from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
+from fabricengineer.api.fabric.workspace.items.lakehouse import Lakehouse
+
+
+class TestLakehouse:
+    test_lh: Lakehouse = None
+
+    def authenticate(self) -> None:
+        set_global_fabric_client(get_env_svc())
+
+    def rand_lakehouse(self, workspace_id: str) -> Lakehouse:
+        name = f"LH_{uuid.uuid4().hex[:8].replace('-', '')}"
+        return Lakehouse(
+            workspace_id=workspace_id,
+            name=name,
+            description="Test Lakehouse",
+        )
+
+    def lakehouse_singleton(self, workspace_id: str) -> Lakehouse:
+        if self.test_lh is None or not self.test_lh.exists():
+            self.test_lh = self.rand_lakehouse(workspace_id)
+            self.test_lh.create()
+        return self.test_lh
+
+    def test_init_lakehouse(self, workspace_id: str):
+        lakehouse: Lakehouse = self.rand_lakehouse(workspace_id)
+        assert lakehouse.item.fields.get("displayName", "").startswith("LH_")
+        assert lakehouse.item.fields.get("description") == "Test Lakehouse"
+
+    def test_from_json(self, workspace_id: str):
+        json_data = {
+            "workspaceId": workspace_id,
+            "displayName": "WP_Test",
+            "description": "Test Lakehouse from JSON",
+            "id": "12345",
+            "type": "Lakehouse",
+            "properties": {
+                "defaultSchema": "dbo",
+                "oneLakeTablesPath": "<TablePath>",
+                "oneLakeFilesPath": "<FilePath>",
+                "sqlEndpointProperties": {
+                    "id": "<SqlEndpointId>",
+                    "connectionString": "<SqlConnectionString>",
+                    "provisioningStatus": "<SqlProvisioningStatus>",
+                }
+
+            }
+        }
+        obj = Lakehouse.from_json(json_data)
+        assert obj.item.fields.get("displayName") == json_data["displayName"]
+        assert obj.item.fields.get("description") == json_data["description"]
+        assert obj.item.api.displayName == json_data["displayName"]
+        assert obj.item.api.description == json_data["description"]
+        assert obj.item.api.id == json_data["id"]
+        assert obj.item.api.type == json_data["type"]
+        assert obj.item.api.properties.defaultSchema == json_data["properties"]["defaultSchema"]
+        assert obj.item.api.properties.oneLakeTablesPath == json_data["properties"]["oneLakeTablesPath"]
+        assert obj.item.api.properties.oneLakeFilesPath == json_data["properties"]["oneLakeFilesPath"]
+        assert obj.item.api.properties.sqlEndpointProperties.id == json_data["properties"]["sqlEndpointProperties"]["id"]
+        assert obj.item.api.properties.sqlEndpointProperties.connectionString == json_data["properties"]["sqlEndpointProperties"]["connectionString"]
+        assert obj.item.api.properties.sqlEndpointProperties.provisioningStatus == json_data["properties"]["sqlEndpointProperties"]["provisioningStatus"]
+
+    def test_create(self, workspace_id: str):
+        self.authenticate()
+        obj = self.rand_lakehouse(workspace_id)
+        obj.create()
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "Lakehouse"
+        assert obj.item.api.properties.defaultSchema is not None
+        assert obj.item.api.properties.oneLakeTablesPath is not None
+        assert obj.item.api.properties.oneLakeFilesPath is not None
+        assert obj.item.api.properties.sqlEndpointProperties.id is not None
+        assert obj.item.api.properties.sqlEndpointProperties.connectionString is not None
+        assert obj.item.api.properties.sqlEndpointProperties.provisioningStatus is not None
+
+    def test_update(self, workspace_id: str):
+        self.authenticate()
+        obj = self.lakehouse_singleton(workspace_id)
+        assert obj.item.api.description == "Test Lakehouse"
+        obj.update(description="Updated Description")
+        assert obj.item.api.description == "Updated Description"
+
+    def test_fetch_and_delete(self, workspace_id: str):
+        self.authenticate()
+        obj = self.lakehouse_singleton(workspace_id)
+        obj.fetch()
+        obj.delete()
+        with pytest.raises(requests.HTTPError):
+            obj.fetch()
+
+    def test_get_by_name(self, workspace_id: str):
+        self.authenticate()
+        obj = self.lakehouse_singleton(workspace_id)
+        fetched_obj = Lakehouse.get_by_name(workspace_id, obj.item.api.displayName)
+        assert fetched_obj.item.api.id == obj.item.api.id
+
+    def test_get_by_id(self, workspace_id: str):
+        self.authenticate()
+        obj = self.lakehouse_singleton(workspace_id)
+        fetched_obj = Lakehouse.get_by_id(workspace_id, obj.item.api.id)
+        assert fetched_obj.item.api.id == obj.item.api.id
+
+    def test_list(self, workspace_id: str):
+        self.authenticate()
+        lakehouses = Lakehouse.list(workspace_id)
+        assert isinstance(lakehouses, list)
+        assert len(lakehouses) > 0
+        for obj in lakehouses:
+            assert isinstance(obj, Lakehouse)
+            assert obj.item.api.id is not None
+            assert obj.item.api.displayName is not None
+            assert obj.item.api.description is not None
+
+    def test_exists(self, workspace_id: str):
+        self.authenticate()
+        obj = self.rand_lakehouse(workspace_id)
+        assert not obj.exists()
+        obj.create()
+        assert obj.exists()
+
+    def test_create_if_not_exists(self, workspace_id: str):
+        self.authenticate()
+        obj = self.rand_lakehouse(workspace_id)
+        assert not obj.exists()
+        obj.create_if_not_exists()
+        assert obj.exists()
+        obj.create_if_not_exists()
+
+    def test_fetch_definition(self, workspace_id: str):
+        self.authenticate()
+        obj = self.rand_lakehouse(workspace_id)
+        obj.create()
+        with pytest.raises(requests.HTTPError):
+            obj.fetch_definition()

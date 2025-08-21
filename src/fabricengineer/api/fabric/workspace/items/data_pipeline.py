@@ -3,7 +3,7 @@ import zipfile
 
 from dataclasses import dataclass
 
-from fabricengineer.api.fabric.workspace.items.base import (
+from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,

@@ -8,6 +8,14 @@ from dotenv import load_dotenv
 
 from fabricengineer.api.auth import MicrosoftExtraSVC
 from fabricengineer.api.fabric.client.fabric import FabricAPIClient, set_global_fabric_client
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.items import (
+    Lakehouse,
+    Warehouse,
+    DataPipeline,
+    VariableLibrary,
+    Notebook
+)
 from tests.utils import NotebookUtilsMock
 
 
@@ -80,3 +88,42 @@ def global_cleanup_fs():
                 shutil.rmtree(path)
 
     cleanup_fs()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def global_cleanup_fabric_workspaces():
+    yield  # alle Tests laufen zuerst
+
+    print("CLEANUP: Removing all temporary fabric workspaces.")
+
+    set_global_fabric_client(svc)
+
+    def cleanup_workspaces():
+        workspaces = [ws for ws in Workspace.list() if ws.item.api.displayName.startswith("WP_")]
+        for ws in workspaces:
+            ws.delete()
+
+    cleanup_workspaces()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def global_cleanup_fabric_items():
+    yield  # alle Tests laufen zuerst
+
+    print("CLEANUP: Removing all temporary fabric items.")
+
+    set_global_fabric_client(svc)
+
+    def cleanup_items():
+        workspace_id = os.getenv("WORKSPACE_ID")
+        items = (
+            Lakehouse.list(workspace_id) +
+            Warehouse.list(workspace_id) +
+            DataPipeline.list(workspace_id) +
+            Notebook.list(workspace_id) +
+            VariableLibrary.list(workspace_id)
+        )
+        for item in items:
+            item.delete()
+
+    cleanup_items()

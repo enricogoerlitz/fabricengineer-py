@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 from fabricengineer.api.utils import base64_encode
-from fabricengineer.api.fabric.workspace.items.base import (
+from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
+from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
 
 
 ITEM_PATH = "/warehouses"

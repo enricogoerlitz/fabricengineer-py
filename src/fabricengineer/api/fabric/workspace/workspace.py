@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, FabricItem
+from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, FabricItem
 
 
 ITEM_PATH = ""
@@ -78,7 +78,7 @@ class Workspace(BaseWorkspaceItem[WorkspaceAPIData]):
         )
 
     @staticmethod
-    def list() -> list[WorkspaceAPIData]:
+    def list() -> list["Workspace"]:
         return [
             Workspace.from_json(item)
             for item in BaseWorkspaceItem.list(

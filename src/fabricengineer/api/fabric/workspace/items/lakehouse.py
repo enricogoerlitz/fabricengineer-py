@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.items.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
+from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
 from fabricengineer.logging.logger import logger
 
 
@@ -67,6 +67,8 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             item["properties"] = {
                 "sqlEndpointProperties": {}
             }
+        if "sqlEndpointProperties" not in item["properties"]:
+            item["properties"]["sqlEndpointProperties"] = {}
         kwargs["properties"] = LakehouseProperties(**item["properties"])
         kwargs["properties"].sqlEndpointProperties = LakehouseSqlEndpointProperties(
             **item["properties"]["sqlEndpointProperties"]

@@ -95,7 +95,7 @@ class FabricAPIClient:
         return url
 
     def _prep_path(self, path: str) -> str:
-        if path is None:
+        if path is None or path == "":
             return ""
         prep_path = path if path.startswith("/") else f"/{path}"
         return prep_path
@@ -110,14 +110,18 @@ class FabricAPIClient:
         return token
 
 
-global fabric_client
-fabric_client = FabricAPIClient(msf_svc=get_env_svc(), api_version="v1")
+global fabric_client_instance
+fabric_client_instance = FabricAPIClient(msf_svc=get_env_svc(), api_version="v1")
+
+
+def fabric_client() -> FabricAPIClient:
+    return fabric_client_instance
 
 
 def set_global_fabric_client(
         msf_svc: MicrosoftExtraSVC = None,
         api_version: str = "v1"
 ) -> FabricAPIClient:
-    global fabric_client
-    fabric_client = FabricAPIClient(msf_svc=msf_svc, api_version=api_version)
-    return fabric_client
+    global fabric_client_instance
+    fabric_client_instance = FabricAPIClient(msf_svc=msf_svc, api_version=api_version)
+    return fabric_client_instance

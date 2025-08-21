@@ -48,10 +48,10 @@ def http_wait_for_completion_after_202(
     obj = None
     while True:
         time.sleep(retry)
-        resp_retry = requests.get(op_location, headers=fabric_client.headers)
+        resp_retry = requests.get(op_location, headers=fabric_client().headers)
 
         if resp_retry.json()["status"] == "Succeeded":
-            res = requests.get(resp_retry.headers["Location"], headers=fabric_client.headers)
+            res = requests.get(resp_retry.headers["Location"], headers=fabric_client().headers)
             res.raise_for_status()
             obj = res.json()
             break
