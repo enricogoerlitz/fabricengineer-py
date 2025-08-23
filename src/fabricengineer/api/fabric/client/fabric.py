@@ -53,11 +53,13 @@ class FabricAPIClient:
         }
 
     def get(self, path: str) -> requests.Response:
+        self.check_headers_auth()
         url = self._url(path)
         resp: requests.Response = requests.get(url, headers=self.headers)
         return resp
 
     def post(self, path: str, payload: dict) -> requests.Response:
+        self.check_headers_auth()
         url = self._url(path)
         resp: requests.Response = requests.post(
             url,
@@ -67,6 +69,7 @@ class FabricAPIClient:
         return resp
 
     def patch(self, path: str, payload: dict) -> requests.Response:
+        self.check_headers_auth()
         url = self._url(path)
         resp: requests.Response = requests.patch(
             url,
@@ -76,6 +79,7 @@ class FabricAPIClient:
         return resp
 
     def put(self, path: str, payload: dict) -> requests.Response:
+        self.check_headers_auth()
         url = self._url(path)
         resp: requests.Response = requests.put(
             url,
@@ -85,9 +89,15 @@ class FabricAPIClient:
         return resp
 
     def delete(self, path: str) -> requests.Response:
+        self.check_headers_auth()
         url = self._url(path)
         resp: requests.Response = requests.delete(url, headers=self.headers)
         return resp
+
+    def check_headers_auth(self) -> None:
+        token = self.headers.get("Authorization", "").replace("Bearer ", "")
+        if len(token) < 10:
+            raise ValueError("Authorization header is missing.")
 
     def _url(self, path: str) -> str:
         path = self._prep_path(path)

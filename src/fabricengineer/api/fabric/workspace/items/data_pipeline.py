@@ -49,7 +49,11 @@ class CopyDataPipelineDefinition(CopyItemDefinition):
 
 
 class ZIPDataPipelineDefinition(ItemDefinitionInterface):
-    def __init__(self, pipeline_json: str):
+    def __init__(self, pipeline_json: str = None, zip_path: str = None):
+        if pipeline_json is None and zip_path is None:
+            raise ValueError("Either pipeline_json or zip_path must be provided")
+        if isinstance(zip_path, str):
+            pipeline_json = read_zip_pipeline_json(zip_path)
         self._pipeline_json = pipeline_json
 
     def get_definition(self) -> dict:
@@ -103,7 +107,7 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
             description=description,
             folderId=folder_id,
             definition=definition,
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=DataPipeline.from_json,
@@ -126,7 +130,7 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
     @staticmethod
     def get_by_name(workspace_id: str, name: str) -> "DataPipeline":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=DataPipeline.from_json,
+            create_item_type_fn=DataPipeline.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
@@ -135,7 +139,7 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
     @staticmethod
     def get_by_id(workspace_id: str, id: str) -> "DataPipeline":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=DataPipeline.from_json,
+            create_item_type_fn=DataPipeline.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id

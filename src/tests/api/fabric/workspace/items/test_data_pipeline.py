@@ -3,35 +3,35 @@ import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
-from fabricengineer.api.fabric.workspace.items.notebook import (
-    Notebook,
-    NotebookAPIData,
-    CopyFabricNotebookDefinition,
-    IPYNBNotebookDefinition
+from fabricengineer.api.fabric.workspace.items.data_pipeline import (
+    DataPipeline,
+    DataPipelineAPIData,
+    CopyDataPipelineDefinition,
+    ZIPDataPipelineDefinition
 )
 
 
-class TestNotebookAPIData:
-    """Test NotebookAPIData dataclass."""
+class TestDataPipelineAPIData:
+    """Test DataPipelineAPIData dataclass."""
 
     def test_create_with_required_fields(self):
-        """Test creating NotebookAPIData with only required fields."""
-        api_data = NotebookAPIData(
+        """Test creating DataPipelineAPIData with only required fields."""
+        api_data = DataPipelineAPIData(
             id="datapipeline-123",
             workspaceId="workspace-123",
-            displayName="Test Notebook",
+            displayName="Test DataPipeline",
             description="Test Description",
-            type="Notebook"
+            type="DataPipeline"
         )
 
         assert api_data.id == "datapipeline-123"
-        assert api_data.displayName == "Test Notebook"
+        assert api_data.displayName == "Test DataPipeline"
         assert api_data.description == "Test Description"
-        assert api_data.type == "Notebook"
+        assert api_data.type == "DataPipeline"
 
     def test_required_attributes_exist(self):
         """Test that all required attributes exist."""
-        api_data = NotebookAPIData(
+        api_data = DataPipelineAPIData(
             id="test-id",
             workspaceId="workspace-123",
             displayName="Test Name",
@@ -46,40 +46,40 @@ class TestNotebookAPIData:
         assert hasattr(api_data, 'type')
 
 
-class TestNotebook:
-    test_nb: Notebook = None
+class TestDataPipeline:
+    test_dp: DataPipeline = None
 
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_notebook(self, workspace_id: str) -> Notebook:
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
-        return Notebook(
+    def rand_data_pipeline(self, workspace_id: str) -> DataPipeline:
+        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        return DataPipeline(
             workspace_id=workspace_id,
             name=name,
-            description="Test Notebook"
+            description="Test DataPipeline"
         )
 
-    def notebook_singleton(self, workspace_id: str) -> Notebook:
-        if self.test_nb is None or not self.test_nb.exists():
-            self.test_nb = self.rand_notebook(workspace_id)
-            self.test_nb.create()
-        return self.test_nb
+    def data_pipeline_singleton(self, workspace_id: str) -> DataPipeline:
+        if self.test_dp is None or not self.test_dp.exists():
+            self.test_dp = self.rand_data_pipeline(workspace_id)
+            self.test_dp.create()
+        return self.test_dp
 
-    def test_init_notebook(self, workspace_id: str):
-        notebook: Notebook = self.rand_notebook(workspace_id)
-        assert notebook.item.fields.get("displayName", "").startswith("NB_")
-        assert notebook.item.fields.get("description") == "Test Notebook"
+    def test_init_data_pipeline(self, workspace_id: str):
+        data_pipeline: DataPipeline = self.rand_data_pipeline(workspace_id)
+        assert data_pipeline.item.fields.get("displayName", "").startswith("DP_")
+        assert data_pipeline.item.fields.get("description") == "Test DataPipeline"
 
     def test_from_json(self, workspace_id: str):
         json_data = {
             "workspaceId": workspace_id,
-            "displayName": "NB_Test",
-            "description": "Test Notebook from JSON",
+            "displayName": "DP_Test",
+            "description": "Test DataPipeline from JSON",
             "id": "12345",
-            "type": "Notebook"
+            "type": "DataPipeline"
         }
-        obj = Notebook.from_json(json_data)
+        obj = DataPipeline.from_json(json_data)
         print("OBJ:", obj)
         assert obj.item.fields.get("displayName") == json_data["displayName"]
         assert obj.item.fields.get("description") == json_data["description"]
@@ -90,63 +90,63 @@ class TestNotebook:
 
     def test_create_without_definition(self, workspace_id: str):
         self.authenticate()
-        obj = self.rand_notebook(workspace_id)
+        obj = self.rand_data_pipeline(workspace_id)
         obj.create(max_retry_seconds_at_202=1)
         assert obj.item.api.id is not None
         assert obj.item.api.displayName == obj.item.fields.get("displayName")
         assert obj.item.api.description == obj.item.fields.get("description")
-        assert obj.item.api.type == "Notebook"
+        assert obj.item.api.type == "DataPipeline"
 
-    def test_create_with_ipynb(self, workspace_id: str):
+    def test_create_with_zip(self, workspace_id: str):
         self.authenticate()
-        path = "./src/tests/data/notebooks/TEST_NOTEBOOK.ipynb"
-        definition = IPYNBNotebookDefinition(ipynb_path=path)
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
-        obj = Notebook(
+        path = "./src/tests/data/pipelines/TEST_PIPELINE.zip"
+        definition = ZIPDataPipelineDefinition(zip_path=path)
+        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        obj = DataPipeline(
             workspace_id=workspace_id,
             name=name,
-            description="Test Notebook",
+            description="Test DataPipeline",
             definition=definition
         )
         obj.create(max_retry_seconds_at_202=1)
         assert obj.item.api.id is not None
         assert obj.item.api.displayName == obj.item.fields.get("displayName")
         assert obj.item.api.description == obj.item.fields.get("description")
-        assert obj.item.api.type == "Notebook"
+        assert obj.item.api.type == "DataPipeline"
         assert obj.fetch_definition() is not None
 
-    def test_create_with_copy_fabric_notebook(self, workspace_id: str):
+    def test_create_with_copy_fabric_data_pipeline(self, workspace_id: str):
         self.authenticate()
-        obj_template = self.notebook_singleton(workspace_id)
+        obj_template = self.data_pipeline_singleton(workspace_id)
         obj_template
-        definition = CopyFabricNotebookDefinition(
+        definition = CopyDataPipelineDefinition(
             workspace_id=workspace_id,
-            notebook_id=obj_template.item.api.id
+            pipeline_id=obj_template.item.api.id
         )
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
-        obj = Notebook(
+        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        obj = DataPipeline(
             workspace_id=workspace_id,
             name=name,
-            description="Test Notebook",
+            description="Test DataPipeline",
             definition=definition
         )
         obj.create(max_retry_seconds_at_202=1)
         assert obj.item.api.id is not None
         assert obj.item.api.displayName == obj.item.fields.get("displayName")
         assert obj.item.api.description == obj.item.fields.get("description")
-        assert obj.item.api.type == "Notebook"
+        assert obj.item.api.type == "DataPipeline"
         assert obj.fetch_definition() is not None
 
     def test_update(self, workspace_id: str):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        assert obj.item.api.description == "Test Notebook"
+        obj = self.data_pipeline_singleton(workspace_id)
+        assert obj.item.api.description == "Test DataPipeline"
         obj.update(description="Updated Description")
         assert obj.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
+        obj = self.data_pipeline_singleton(workspace_id)
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
@@ -154,37 +154,37 @@ class TestNotebook:
 
     def test_get_by_name(self, workspace_id: str):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        fetched_obj = Notebook.get_by_name(workspace_id, obj.item.api.displayName)
+        obj = self.data_pipeline_singleton(workspace_id)
+        fetched_obj = DataPipeline.get_by_name(workspace_id, obj.item.api.displayName)
         assert fetched_obj.item.api.id == obj.item.api.id
 
     def test_get_by_id(self, workspace_id: str):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        fetched_obj = Notebook.get_by_id(workspace_id, obj.item.api.id)
+        obj = self.data_pipeline_singleton(workspace_id)
+        fetched_obj = DataPipeline.get_by_id(workspace_id, obj.item.api.id)
         assert fetched_obj.item.api.id == obj.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
-        notebooks = Notebook.list(workspace_id)
-        assert isinstance(notebooks, list)
-        assert len(notebooks) > 0
-        for obj in notebooks:
-            assert isinstance(obj, Notebook)
+        data_pipelines = DataPipeline.list(workspace_id)
+        assert isinstance(data_pipelines, list)
+        assert len(data_pipelines) > 0
+        for obj in data_pipelines:
+            assert isinstance(obj, DataPipeline)
             assert obj.item.api.id is not None
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
     def test_exists(self, workspace_id: str):
         self.authenticate()
-        obj = self.rand_notebook(workspace_id)
+        obj = self.rand_data_pipeline(workspace_id)
         assert not obj.exists()
         obj.create()
         assert obj.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
-        obj = self.rand_notebook(workspace_id)
+        obj = self.rand_data_pipeline(workspace_id)
         assert not obj.exists()
         obj.create_if_not_exists()
         assert obj.exists()
@@ -192,7 +192,7 @@ class TestNotebook:
 
     def test_fetch_definition(self, workspace_id: str):
         self.authenticate()
-        obj = self.rand_notebook(workspace_id)
+        obj = self.rand_data_pipeline(workspace_id)
         obj.create()
         definition = obj.fetch_definition()
         assert definition is not None

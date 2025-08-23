@@ -45,7 +45,9 @@ class CopyItemDefinition(ItemDefinitionInterface):
         url = f"/workspaces/{self._wid}/{self._item_uri_name}/{self._id}/getDefinition"
         resp = fabric_client().post(url, payload={})
         resp.raise_for_status()
-        definition = http_wait_for_completion_after_202(resp, retry_max_seconds=1)
+        definition = resp.json()
+        if resp.status_code == 202:
+            definition = http_wait_for_completion_after_202(resp, retry_max_seconds=1)
         return definition["definition"]
 
 
@@ -123,6 +125,8 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
     def fetch_definition(self) -> dict:
         if self._item.api is None:
             self.fetch()
+            if self._item.api is None:
+                raise ValueError("Item API is not available")
         url = f"{self._base_item_url}/{self._item.api.id}/getDefinition"
         resp = fabric_client().workspaces.post(self._workspace_id, url, payload={})
         resp.raise_for_status()
@@ -140,7 +144,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         except Exception as e:
             raise e
 
-    def create(self) -> None:
+    def create(self, max_retry_seconds_at_202: int = 5, timeout: int = 90) -> None:
         item_path = self._base_item_url
         payload = self._item.fields
         resp = fabric_client().workspaces.post(
@@ -148,12 +152,17 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             item_path=item_path,
             payload=payload
         )
-        print("RESP:", resp.json())
+        print("RESP:", resp.status_code, resp.json())
         resp.raise_for_status()
 
         item = resp.json()
         if resp.status_code == 202 and item is None:
-            item = http_wait_for_completion_after_202(resp, payload)
+            item = http_wait_for_completion_after_202(
+                resp=resp,
+                payload=payload,
+                retry_max_seconds=max_retry_seconds_at_202,
+                timeout=timeout
+            )
 
         self._item.api = self._create_item_type_fn(item).item.api
         self.fetch()
@@ -175,6 +184,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             item_path=item_path,
             payload=payload
         )
+        print("RESP:", resp.status_code, resp.json())
         resp.raise_for_status()
         item = resp.json()
         self._item.api = self._create_item_type_fn(item).item.api

@@ -7,11 +7,13 @@ class FabricAPIWorkspaceClient:
         self._base_url = f"{client.base_url}/workspaces"
 
     def get(self, workspace_id: str = None, item_path: str = None) -> requests.Response:
+        self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
         resp: requests.Response = requests.get(url, headers=self._client.headers)
         return resp
 
     def post(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+        self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
         resp: requests.Response = requests.post(
             url,
@@ -21,6 +23,7 @@ class FabricAPIWorkspaceClient:
         return resp
 
     def patch(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+        self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
         resp: requests.Response = requests.patch(
             url,
@@ -30,6 +33,7 @@ class FabricAPIWorkspaceClient:
         return resp
 
     def put(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+        self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
         resp: requests.Response = requests.put(
             url,
@@ -39,6 +43,7 @@ class FabricAPIWorkspaceClient:
         return resp
 
     def delete(self, workspace_id: str = None, item_path: str = None) -> requests.Response:
+        self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
         resp: requests.Response = requests.delete(url, headers=self._client.headers)
         return resp

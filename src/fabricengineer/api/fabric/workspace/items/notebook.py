@@ -1,6 +1,7 @@
 import json
 
 from dataclasses import dataclass
+import os
 
 
 from fabricengineer.api.utils import base64_encode
@@ -28,19 +29,25 @@ class NotebookAPIData(BaseItemAPIData):
 
 
 class CopyFabricNotebookDefinition(CopyItemDefinition):
-    def __init__(self, workspace_id: str, id: str):
+    def __init__(self, workspace_id: str, notebook_id: str):
         super().__init__(
             workspace_id=workspace_id,
-            id=id,
+            id=notebook_id,
             item_uri_name="notebooks"
         )
 
 
 class IPYNBNotebookDefinition(ItemDefinitionInterface):
-    def __init__(self, code: str | dict):
-        if isinstance(code, dict):
-            code = json.dumps(code)
-        self._code = code
+    def __init__(self, *, ipynb_code: str | dict = None, ipynb_path: str = None) -> None:
+        if ipynb_code is None and ipynb_path is None:
+            raise ValueError("Either ipynb_code or ipynb_path must be provided")
+        if isinstance(ipynb_path, str):
+            if not os.path.exists(ipynb_path):
+                raise FileNotFoundError(f"File not found: {ipynb_path}")
+            ipynb_code = read_ipynb_notebook(ipynb_path)
+        if isinstance(ipynb_code, dict):
+            ipynb_code = json.dumps(ipynb_code)
+        self._code = ipynb_code
 
     def get_definition(self) -> dict:
         code_b64 = base64_encode(self._code)
@@ -94,7 +101,7 @@ class Notebook(BaseWorkspaceItem[NotebookAPIData]):
             description=description,
             folderId=folder_id,
             definition=definition,
-            apiData=api_data
+            api_data=api_data
         )
         super().__init__(
             create_type_fn=Notebook.from_json,
@@ -117,7 +124,7 @@ class Notebook(BaseWorkspaceItem[NotebookAPIData]):
     @staticmethod
     def get_by_name(workspace_id: str, name: str) -> "Notebook":
         return BaseWorkspaceItem.get_by_name(
-            create_fn=Notebook.from_json,
+            create_item_type_fn=Notebook.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             name=name
@@ -126,7 +133,7 @@ class Notebook(BaseWorkspaceItem[NotebookAPIData]):
     @staticmethod
     def get_by_id(workspace_id: str, id: str) -> "Notebook":
         return BaseWorkspaceItem.get_by_id(
-            create_fn=Notebook.from_json,
+            create_item_type_fn=Notebook.from_json,
             workspace_id=workspace_id,
             base_item_url=ITEM_PATH,
             id=id

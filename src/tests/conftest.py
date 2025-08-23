@@ -65,6 +65,14 @@ def workspace_id():
     return workspace_id
 
 
+@pytest.fixture(scope="session")
+def workspace():
+    workspace_id = os.getenv("WORKSPACE_ID")
+    workspace = Workspace.get_by_id(workspace_id)
+    assert isinstance(workspace_id, str) and len(workspace_id) > 0, "WORKSPACE_ID must be set in the environment variables."
+    return workspace
+
+
 @pytest.fixture
 def msf_svc():
     """Create a mock for Microsoft Fabric Service."""

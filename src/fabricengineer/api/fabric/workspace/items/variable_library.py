@@ -34,17 +34,11 @@ class VariableLibraryVariable:
 class VariableLibraryDefinition(ItemDefinitionInterface):
     def __init__(
             self,
-            variable_lib_name: str,
             value_sets_ordered: list[str],
             *variables: list[VariableLibraryVariable]
     ) -> None:
-        self._var_lib_name = variable_lib_name
         self._value_sets = value_sets_ordered
         self._variables = variables or []
-
-    @property
-    def name(self) -> str:
-        return self._var_lib_name
 
     def get_definition(self) -> dict:
         variables = self._serialize_variables()
@@ -100,7 +94,7 @@ class VariableLibraryDefinition(ItemDefinitionInterface):
             "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
             "metadata": {
                 "type": "VariableLibrary",
-                "displayName": self._var_lib_name
+                "displayName": "VariableLibrary"
             },
             "config": {
                 "version": "2.0",

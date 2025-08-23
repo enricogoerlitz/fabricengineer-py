@@ -206,9 +206,11 @@ class TestWorkspace:
 
     def test_update(self, workspace: Workspace):
         self.authenticate()
-        assert workspace.item.api.description == "Test Workspace"
-        workspace.update(description="Updated Description")
-        assert workspace.item.api.description == "Updated Description"
+        old_description = workspace.item.api.description
+        new_description = f"Updated Description {uuid.uuid4().hex[:8].replace('-', '')}"
+        workspace.update(description=new_description)
+        assert workspace.item.api.description == new_description
+        assert workspace.item.api.description != old_description
 
     def test_fetch_and_delete(self):
         self.authenticate()
@@ -257,6 +259,6 @@ class TestWorkspace:
 
     def test_fetch_definition(self, workspace: Workspace):
         self.authenticate()
-        workspace.create()
+        # workspace.create()
         with pytest.raises(requests.HTTPError):
             workspace.fetch_definition()
