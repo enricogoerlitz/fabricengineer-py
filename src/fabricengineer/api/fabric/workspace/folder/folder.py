@@ -44,6 +44,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
         return WorkspaceFolder(
             workspace_id=api_data.workspaceId,
             name=api_data.displayName,
+            folder_id=api_data.parentFolderId,
             api_data=api_data
         )
 
@@ -66,7 +67,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
         )
 
     @staticmethod
-    def list(workspace_id: str) -> list[WorkspaceFolderAPIData]:
+    def list(workspace_id: str) -> list["WorkspaceFolder"]:
         return [
             WorkspaceFolder.from_json(item)
             for item in BaseWorkspaceItem.list(
