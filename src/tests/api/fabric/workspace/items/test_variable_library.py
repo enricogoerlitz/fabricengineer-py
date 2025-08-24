@@ -236,6 +236,7 @@ class TestVariableLibrary:
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
         obj = self.rand_variable_library(workspace_id)
+        obj.create(max_retry_seconds_at_202=1)
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
