@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fabricengineer.api.auth import MicrosoftExtraSVC
 from fabricengineer.api.fabric.client.fabric import FabricAPIClient, set_global_fabric_client
 from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from fabricengineer.api.fabric.workspace.items import (
     Lakehouse,
     Warehouse,
@@ -129,7 +130,8 @@ def global_cleanup_fabric_items():
             Warehouse.list(workspace_id) +
             DataPipeline.list(workspace_id) +
             Notebook.list(workspace_id) +
-            VariableLibrary.list(workspace_id)
+            VariableLibrary.list(workspace_id) +
+            WorkspaceFolder.list(workspace_id)
         )
         for item in items:
             item.delete()
