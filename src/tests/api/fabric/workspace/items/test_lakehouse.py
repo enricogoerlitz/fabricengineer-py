@@ -102,7 +102,10 @@ class TestLakehouse:
 
     def test_get_by_name(self, lakehouse_singleton: Lakehouse):
         self.authenticate()
-        fetched_obj = Lakehouse.get_by_name(lakehouse_singleton.item.api.workspaceId, lakehouse_singleton.item.api.displayName)
+        fetched_obj = Lakehouse.get_by_name(
+            lakehouse_singleton.item.api.workspaceId,
+            lakehouse_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == lakehouse_singleton.item.api.id
 
     def test_get_by_id(self, workspace_id: str, lakehouse_singleton: Lakehouse):

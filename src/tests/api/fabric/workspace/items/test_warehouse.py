@@ -272,12 +272,18 @@ class TestWarehouse:
 
     def test_get_by_name(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        fetched_obj = Warehouse.get_by_name(warehouse_singleton.item.api.workspaceId, warehouse_singleton.item.api.displayName)
+        fetched_obj = Warehouse.get_by_name(
+            warehouse_singleton.item.api.workspaceId,
+            warehouse_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == warehouse_singleton.item.api.id
 
     def test_get_by_id(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        fetched_obj = Warehouse.get_by_id(warehouse_singleton.item.api.workspaceId, warehouse_singleton.item.api.id)
+        fetched_obj = Warehouse.get_by_id(
+            warehouse_singleton.item.api.workspaceId,
+            warehouse_singleton.item.api.id
+        )
         assert fetched_obj.item.api.id == warehouse_singleton.item.api.id
 
     def test_list(self, workspace_id: str):

@@ -133,7 +133,10 @@ class TestWorkspaceFolder:
 
     def test_get_by_name(self, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        fetched_obj = WorkspaceFolder.get_by_name(folder_singleton.item.api.workspaceId, folder_singleton.item.api.displayName)
+        fetched_obj = WorkspaceFolder.get_by_name(
+            folder_singleton.item.api.workspaceId,
+            folder_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == folder_singleton.item.api.id
 
     def test_get_by_id(self, workspace_id: str, folder_singleton: WorkspaceFolder):

@@ -160,7 +160,10 @@ class TestNotebook:
 
     def test_get_by_name(self, notebook_singleton: Notebook):
         self.authenticate()
-        fetched_obj = Notebook.get_by_name(notebook_singleton.item.api.workspaceId, notebook_singleton.item.api.displayName)
+        fetched_obj = Notebook.get_by_name(
+            notebook_singleton.item.api.workspaceId,
+            notebook_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == notebook_singleton.item.api.id
 
     def test_get_by_id(self, workspace_id: str, notebook_singleton: Notebook):

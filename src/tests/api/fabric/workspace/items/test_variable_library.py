@@ -243,12 +243,18 @@ class TestVariableLibrary:
 
     def test_get_by_name(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        fetched_obj = VariableLibrary.get_by_name(varlib_singleton.item.api.workspaceId, varlib_singleton.item.api.displayName)
+        fetched_obj = VariableLibrary.get_by_name(
+            varlib_singleton.item.api.workspaceId,
+            varlib_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == varlib_singleton.item.api.id
 
     def test_get_by_id(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        fetched_obj = VariableLibrary.get_by_id(varlib_singleton.item.api.workspaceId, varlib_singleton.item.api.id)
+        fetched_obj = VariableLibrary.get_by_id(
+            varlib_singleton.item.api.workspaceId,
+            varlib_singleton.item.api.id
+        )
         assert fetched_obj.item.api.id == varlib_singleton.item.api.id
 
     def test_list(self, workspace_id: str):

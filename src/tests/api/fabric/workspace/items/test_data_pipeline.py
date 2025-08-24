@@ -160,7 +160,10 @@ class TestDataPipeline:
 
     def test_get_by_name(self, workspace_id: str, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        fetched_obj = DataPipeline.get_by_name(workspace_id, data_pipeline_singleton.item.api.displayName)
+        fetched_obj = DataPipeline.get_by_name(
+            workspace_id,
+            data_pipeline_singleton.item.api.displayName
+        )
         assert fetched_obj.item.api.id == data_pipeline_singleton.item.api.id
 
     def test_get_by_id(self, workspace_id: str, data_pipeline_singleton: DataPipeline):
