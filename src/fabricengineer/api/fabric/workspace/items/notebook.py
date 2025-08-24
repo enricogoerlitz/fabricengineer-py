@@ -38,15 +38,23 @@ class CopyFabricNotebookDefinition(CopyItemDefinition):
 
 
 class IPYNBNotebookDefinition(ItemDefinitionInterface):
-    def __init__(self, *, ipynb_code: str | dict = None, ipynb_path: str = None) -> None:
+    def __init__(
+            self,
+            *,
+            ipynb_code: str | dict = None,
+            ipynb_path: str = None
+    ) -> None:
         if ipynb_code is None and ipynb_path is None:
             raise ValueError("Either ipynb_code or ipynb_path must be provided")
+
         if isinstance(ipynb_path, str):
             if not os.path.exists(ipynb_path):
                 raise FileNotFoundError(f"File not found: {ipynb_path}")
             ipynb_code = read_ipynb_notebook(ipynb_path)
+
         if isinstance(ipynb_code, dict):
             ipynb_code = json.dumps(ipynb_code)
+
         self._code = ipynb_code
 
     def get_definition(self) -> dict:

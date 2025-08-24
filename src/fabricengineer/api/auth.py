@@ -2,6 +2,8 @@ import requests
 
 from dataclasses import dataclass
 
+from fabricengineer.api.utils import check_http_response
+
 
 @dataclass
 class MicrosoftExtraSVC:
@@ -24,7 +26,7 @@ class MicrosoftExtraSVC:
         }
 
         resp = requests.post(token_url, data=data)
-        resp.raise_for_status()
+        check_http_response(resp)
         token = resp.json()["access_token"]
 
         return token

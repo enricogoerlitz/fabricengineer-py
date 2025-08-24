@@ -33,7 +33,7 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
         name: str,
         description: str = None,
         folder_id: str = None,
-        collation_type: str = "Latin1_General_100_BIN2_UTF8",
+        collation_type: str = "Latin1_General_100_BIN2_UTF8",  # Case-sensitive
         api_data: WarehouseAPIData = None
     ):
         description = description or "New Warehouse"

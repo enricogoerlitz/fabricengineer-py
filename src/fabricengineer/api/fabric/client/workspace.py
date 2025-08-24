@@ -6,49 +6,76 @@ class FabricAPIWorkspaceClient:
         self._client = client
         self._base_url = f"{client.base_url}/workspaces"
 
-    def get(self, workspace_id: str = None, item_path: str = None) -> requests.Response:
+    def get(
+            self,
+            workspace_id: str = None,
+            item_path: str = None
+    ) -> requests.Response:
         self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
-        resp: requests.Response = requests.get(url, headers=self._client.headers)
+        resp = requests.get(url, headers=self._client.headers)
         return resp
 
-    def post(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+    def post(
+            self,
+            workspace_id: str = None,
+            item_path: str = None,
+            payload: dict = None
+    ) -> requests.Response:
         self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
-        resp: requests.Response = requests.post(
+        resp = requests.post(
             url,
             headers=self._client.headers,
             json=payload
         )
         return resp
 
-    def patch(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+    def patch(
+            self,
+            workspace_id: str = None,
+            item_path: str = None,
+            payload: dict = None
+    ) -> requests.Response:
         self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
-        resp: requests.Response = requests.patch(
+        resp = requests.patch(
             url,
             headers=self._client.headers,
             json=payload
         )
         return resp
 
-    def put(self, workspace_id: str = None, item_path: str = None, payload: dict = None) -> requests.Response:
+    def put(
+        self,
+        workspace_id: str = None,
+        item_path: str = None,
+        payload: dict = None
+    ) -> requests.Response:
         self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
-        resp: requests.Response = requests.put(
+        resp = requests.put(
             url,
             headers=self._client.headers,
             json=payload
         )
         return resp
 
-    def delete(self, workspace_id: str = None, item_path: str = None) -> requests.Response:
+    def delete(
+        self,
+        workspace_id: str = None,
+        item_path: str = None
+    ) -> requests.Response:
         self._client.check_headers_auth()
         url = self._url(workspace_id, item_path)
-        resp: requests.Response = requests.delete(url, headers=self._client.headers)
+        resp = requests.delete(url, headers=self._client.headers)
         return resp
 
-    def _url(self, workspace_id: str = None, item_path: str = None) -> str:
+    def _url(
+        self,
+        workspace_id: str = None,
+        item_path: str = None
+    ) -> str:
         item_path = self._client._prep_path(item_path)
         if workspace_id is None:
             return f"{self._base_url}{item_path}"

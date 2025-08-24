@@ -7,6 +7,14 @@ from fabricengineer.api.fabric.client.fabric import fabric_client
 from fabricengineer.logging.logger import logger
 
 
+def check_http_response(resp: requests.Response):
+    if resp.status_code <= 299:
+        return
+    err = f"Status code: {resp.status_code}, Response: {resp.text}"
+    logger.error(err)
+    resp.raise_for_status()
+
+
 def base64_encode(obj: dict | str | bytes | bytearray) -> str:
     """
     Encodiert dicts (als JSON), Strings (UTF-8) oder rohe Bytes/Bytearray
@@ -42,7 +50,7 @@ def http_wait_for_completion_after_202(
     op_id = resp.headers["x-ms-operation-id"]
     op_location = resp.headers["Location"]
     retry = _retry_after(resp, retry_max_seconds)
-    logger.info(f"Status=202, Operation ID: {op_id}, Location: {op_location}, Retry after: {retry}s")
+    logger.info(f"Status=202, Operation ID={op_id}, Location={op_location}, Retry after={retry}s, payload={payload}")
 
     retry_sum = 0
     obj = None
@@ -52,16 +60,16 @@ def http_wait_for_completion_after_202(
 
         if resp_retry.json()["status"] == "Succeeded":
             res = requests.get(resp_retry.headers["Location"], headers=fabric_client().headers)
-            res.raise_for_status()
+            check_http_response(res)
             obj = res.json()
             break
 
         retry = _retry_after(resp_retry)
         retry_sum += retry
         if retry_sum > timeout:
-            logger.warn(f"Timeout after {timeout}s")
+            logger.warning(f"Timeout after {timeout}s")
             raise TimeoutError(f"Timeout while waiting for item creation. Payload: {payload}")
 
-        logger.info(f"Wait for more {retry}s")
+        logger.info(f"Wait for more {retry}s for payload: {payload}")
 
     return obj

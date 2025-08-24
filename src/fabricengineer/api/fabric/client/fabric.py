@@ -3,10 +3,12 @@ import requests
 
 from fabricengineer.api.fabric.client.workspace import FabricAPIWorkspaceClient
 from fabricengineer.api.auth import MicrosoftExtraSVC
+from fabricengineer.logging import logger
 
 
 def get_env_svc() -> MicrosoftExtraSVC | None:
     if "notebookutils" in globals():
+        logger.info("Using notebookutils for authentication.")
         return None
 
     tenant_id = os.environ.get("MICROSOFT_TENANT_ID")
@@ -14,8 +16,15 @@ def get_env_svc() -> MicrosoftExtraSVC | None:
     client_secret = os.environ.get("SVC_MICROSOFT_FABRIC_SECRET_VALUE")
 
     if not all([tenant_id, client_id, client_secret]):
+        expected_env_vars = ["MICROSOFT_TENANT_ID", "SVC_MICROSOFT_FABRIC_CLIENT_ID", "SVC_MICROSOFT_FABRIC_SECRET_VALUE"]
+        msg = (
+            f"Microsoft Fabric service principal environment variables not fully set. "
+            f"Missing environment variables: {', '.join(expected_env_vars)}"
+        )
+        logger.warning(msg)
         return None
 
+    logger.info("Using service principal for authentication.")
     return MicrosoftExtraSVC(
         tenant_id=tenant_id,
         client_id=client_id,
@@ -55,13 +64,13 @@ class FabricAPIClient:
     def get(self, path: str) -> requests.Response:
         self.check_headers_auth()
         url = self._url(path)
-        resp: requests.Response = requests.get(url, headers=self.headers)
+        resp = requests.get(url, headers=self.headers)
         return resp
 
     def post(self, path: str, payload: dict) -> requests.Response:
         self.check_headers_auth()
         url = self._url(path)
-        resp: requests.Response = requests.post(
+        resp = requests.post(
             url,
             headers=self.headers,
             json=payload
@@ -71,7 +80,7 @@ class FabricAPIClient:
     def patch(self, path: str, payload: dict) -> requests.Response:
         self.check_headers_auth()
         url = self._url(path)
-        resp: requests.Response = requests.patch(
+        resp = requests.patch(
             url,
             headers=self.headers,
             json=payload
@@ -81,7 +90,7 @@ class FabricAPIClient:
     def put(self, path: str, payload: dict) -> requests.Response:
         self.check_headers_auth()
         url = self._url(path)
-        resp: requests.Response = requests.put(
+        resp = requests.put(
             url,
             headers=self.headers,
             json=payload
@@ -91,7 +100,7 @@ class FabricAPIClient:
     def delete(self, path: str) -> requests.Response:
         self.check_headers_auth()
         url = self._url(path)
-        resp: requests.Response = requests.delete(url, headers=self.headers)
+        resp = requests.delete(url, headers=self.headers)
         return resp
 
     def check_headers_auth(self) -> None:
@@ -112,10 +121,13 @@ class FabricAPIClient:
 
     def _get_token(self) -> str:
         if self._msf_svc is None and "notebookutils" not in globals():
+            logger.warning("No authentication method available. Token is empty.")
             return ""
         elif "notebookutils" in globals():
+            logger.info("Getting token via notebookutils.")
             token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")  # noqa: F821 # type: ignore
             return token
+        logger.info("Getting token via Microsoft Fabric Service Principal.")
         token = self._msf_svc.token()
         return token
 

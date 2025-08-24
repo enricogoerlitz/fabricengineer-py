@@ -18,7 +18,11 @@ ITEM_PATH = "/dataPipelines"
 
 def read_zip_pipeline_json(zip_filepath: str):
     with zipfile.ZipFile(zip_filepath, "r") as zf:
-        pipeline_file = [f for f in zf.namelist() if f.endswith(".json") and "manifest.json" not in f]
+        pipeline_file = [
+            file
+            for file in zf.namelist()
+            if file.endswith(".json") and "manifest.json" not in file
+        ]
         assert len(pipeline_file) == 1, "Es sollte genau eine JSON-Datei im ZIP sein."
         pipeline_file = pipeline_file[0]
         with zf.open(pipeline_file) as f:

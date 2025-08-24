@@ -109,17 +109,23 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             )
         ]
 
-    def create(self, timeout: int = 90) -> None:
-        super().create()
-        logger.info("Lakehouse created. Waiting for lakehouse SQL endpoint provisioning to complete...")
+    def create(self, timeout: int = 90, wait_for_completion: bool = True) -> None:
+        super().create(
+            wait_for_completion=wait_for_completion,
+            timeout=timeout
+        )
+        if not wait_for_completion:
+            return
+
+        logger.info(f"Lakehouse '{self.item.api.displayName}' created. Waiting for lakehouse SQL endpoint provisioning to complete...")
 
         retry_after = 5
         retry_sum = 0
         while True:
             state = self.fetch().item.api.properties.sqlEndpointProperties.provisioningStatus
-            logger.info(f"Current state: {state}")
+            logger.info(f"Lakehouse '{self.item.api.displayName}' current state: {state}")
             if state != "InProgress":
-                logger.info(f"Lakehouse SQL endpoint provisioning completed with state: {state}.")
+                logger.info(f"Lakehouse '{self.item.api.displayName}' SQL endpoint provisioning completed with state: {state}.")
                 break
 
             retry_sum += retry_after
