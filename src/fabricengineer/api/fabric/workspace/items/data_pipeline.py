@@ -27,7 +27,6 @@ def read_zip_pipeline_json(zip_filepath: str):
         pipeline_file = pipeline_file[0]
         with zf.open(pipeline_file) as f:
             pipeline_json = json.load(f)
-            print(pipeline_json)
 
     assert "resources" in pipeline_json, "Die JSON-Datei muss 'resources' enthalten."
     assert len(pipeline_json["resources"]) == 1, "Die JSON-Datei muss mindestens eine Ressource enthalten."

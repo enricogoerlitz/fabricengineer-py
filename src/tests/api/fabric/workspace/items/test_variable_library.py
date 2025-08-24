@@ -1,5 +1,4 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
@@ -10,6 +9,20 @@ from fabricengineer.api.fabric.workspace.items.variable_library import (
     VariableLibraryDefinition,
     VariableLibraryVariable
 )
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def varlib_singleton(workspace_id: str):
+    """Fixture to create a VariableLibrary instance."""
+    name = rand_workspace_item_name("VL")
+    varlib = VariableLibrary(
+        workspace_id=workspace_id,
+        name=name,
+        description="Test VariableLibrary"
+    )
+    varlib.create()
+    return varlib
 
 
 class TestVariableLibraryProperties:
@@ -143,18 +156,12 @@ class TestVariableLibrary:
         set_global_fabric_client(get_env_svc())
 
     def rand_variable_library(self, workspace_id: str) -> VariableLibrary:
-        name = f"VL_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("VL")
         return VariableLibrary(
             workspace_id=workspace_id,
             name=name,
             description="Test VariableLibrary"
         )
-
-    def variable_library_singleton(self, workspace_id: str) -> VariableLibrary:
-        if self.test_vl is None or not self.test_vl.exists():
-            self.test_vl = self.rand_variable_library(workspace_id)
-            self.test_vl.create()
-        return self.test_vl
 
     def test_init_variable_library(self, workspace_id: str):
         variable_library: VariableLibrary = self.rand_variable_library(workspace_id)
@@ -193,7 +200,7 @@ class TestVariableLibrary:
 
     def test_create_with_definition(self, workspace_id: str):
         self.authenticate()
-        name = f"VL_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("VL")
         obj = VariableLibrary(
             workspace_id=workspace_id,
             name=name,
@@ -220,32 +227,29 @@ class TestVariableLibrary:
         assert isinstance(definition, dict)
         assert "definition" in definition.keys()
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        obj = self.variable_library_singleton(workspace_id)
-        assert obj.item.api.description == "Test VariableLibrary"
-        obj.update(description="Updated Description")
-        assert obj.item.api.description == "Updated Description"
+        assert varlib_singleton.item.api.description == "Test VariableLibrary"
+        varlib_singleton.update(description="Updated Description")
+        assert varlib_singleton.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.variable_library_singleton(workspace_id)
+        obj = self.rand_variable_library(workspace_id)
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
             obj.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        obj = self.variable_library_singleton(workspace_id)
-        fetched_obj = VariableLibrary.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = VariableLibrary.get_by_name(varlib_singleton.item.api.workspaceId, varlib_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == varlib_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        obj = self.variable_library_singleton(workspace_id)
-        fetched_obj = VariableLibrary.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = VariableLibrary.get_by_id(varlib_singleton.item.api.workspaceId, varlib_singleton.item.api.id)
+        assert fetched_obj.item.api.id == varlib_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -258,12 +262,11 @@ class TestVariableLibrary:
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, varlib_singleton: VariableLibrary):
         self.authenticate()
         obj = self.rand_variable_library(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert varlib_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
@@ -273,10 +276,8 @@ class TestVariableLibrary:
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, varlib_singleton: VariableLibrary):
         self.authenticate()
-        obj = self.rand_variable_library(workspace_id)
-        obj.create()
-        definition = obj.fetch_definition()
+        definition = varlib_singleton.fetch_definition()
         assert definition is not None
         assert isinstance(definition, dict)

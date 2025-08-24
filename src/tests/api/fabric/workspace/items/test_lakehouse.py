@@ -1,30 +1,36 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
 from fabricengineer.api.fabric.workspace.items.lakehouse import Lakehouse
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def lakehouse_singleton(workspace_id: str):
+    """Fixture to create a Lakehouse instance."""
+    name = rand_workspace_item_name("LH")
+    lakehouse = Lakehouse(
+        workspace_id=workspace_id,
+        name=name,
+        description="Test Lakehouse"
+    )
+    lakehouse.create(wait_for_completion=False)
+    return lakehouse
 
 
 class TestLakehouse:
-    test_lh: Lakehouse = None
 
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
     def rand_lakehouse(self, workspace_id: str) -> Lakehouse:
-        name = f"LH_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("LH")
         return Lakehouse(
             workspace_id=workspace_id,
             name=name,
-            description="Test Lakehouse",
+            description="Test Lakehouse"
         )
-
-    def lakehouse_singleton(self, workspace_id: str) -> Lakehouse:
-        if self.test_lh is None or not self.test_lh.exists():
-            self.test_lh = self.rand_lakehouse(workspace_id)
-            self.test_lh.create()
-        return self.test_lh
 
     def test_init_lakehouse(self, workspace_id: str):
         lakehouse: Lakehouse = self.rand_lakehouse(workspace_id)
@@ -79,32 +85,30 @@ class TestLakehouse:
         assert obj.item.api.properties.sqlEndpointProperties.connectionString is not None
         assert obj.item.api.properties.sqlEndpointProperties.provisioningStatus is not None
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, lakehouse_singleton: Lakehouse):
         self.authenticate()
-        obj = self.lakehouse_singleton(workspace_id)
-        assert obj.item.api.description == "Test Lakehouse"
-        obj.update(description="Updated Description")
-        assert obj.item.api.description == "Updated Description"
+        assert lakehouse_singleton.item.api.description == "Test Lakehouse"
+        lakehouse_singleton.update(description="Updated Description")
+        assert lakehouse_singleton.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.lakehouse_singleton(workspace_id)
+        obj = self.rand_lakehouse(workspace_id)
+        obj.create(wait_for_completion=False)
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
             obj.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, lakehouse_singleton: Lakehouse):
         self.authenticate()
-        obj = self.lakehouse_singleton(workspace_id)
-        fetched_obj = Lakehouse.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Lakehouse.get_by_name(lakehouse_singleton.item.api.workspaceId, lakehouse_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == lakehouse_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, workspace_id: str, lakehouse_singleton: Lakehouse):
         self.authenticate()
-        obj = self.lakehouse_singleton(workspace_id)
-        fetched_obj = Lakehouse.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Lakehouse.get_by_id(workspace_id, lakehouse_singleton.item.api.id)
+        assert fetched_obj.item.api.id == lakehouse_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -117,24 +121,21 @@ class TestLakehouse:
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, lakehouse_singleton: Lakehouse):
         self.authenticate()
         obj = self.rand_lakehouse(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert lakehouse_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
         obj = self.rand_lakehouse(workspace_id)
         assert not obj.exists()
-        obj.create_if_not_exists()
+        obj.create_if_not_exists(wait_for_completion=False)
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, lakehouse_singleton: Lakehouse):
         self.authenticate()
-        obj = self.rand_lakehouse(workspace_id)
-        obj.create()
         with pytest.raises(requests.HTTPError):
-            obj.fetch_definition()
+            lakehouse_singleton.fetch_definition()

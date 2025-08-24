@@ -1,5 +1,4 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
@@ -7,6 +6,19 @@ from fabricengineer.api.fabric.workspace.folder import (
     WorkspaceFolder,
     WorkspaceFolderAPIData
 )
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def folder_singleton(workspace_id: str):
+    """Fixture to create a Folder instance."""
+    name = rand_workspace_item_name("F")
+    folder = WorkspaceFolder(
+        workspace_id=workspace_id,
+        name=name
+    )
+    folder.create()
+    return folder
 
 
 class TestWorkspaceFolderAPIData:
@@ -61,17 +73,11 @@ class TestWorkspaceFolder:
         set_global_fabric_client(get_env_svc())
 
     def rand_workspace_folder(self, workspace_id: str) -> WorkspaceFolder:
-        name = f"F_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("F")
         return WorkspaceFolder(
             workspace_id=workspace_id,
             name=name
         )
-
-    def workspace_folder_singleton(self, workspace_id: str) -> WorkspaceFolder:
-        if self.test_f is None or not self.test_f.exists():
-            self.test_f = self.rand_workspace_folder(workspace_id)
-            self.test_f.create()
-        return self.test_f
 
     def test_init_workspace_folder(self, workspace_id: str):
         workspace_folder: WorkspaceFolder = self.rand_workspace_folder(workspace_id)
@@ -100,9 +106,9 @@ class TestWorkspaceFolder:
         assert obj.item.api.workspaceId == workspace_id
         assert obj.item.api.parentFolderId is None
 
-    def test_create_with_parent(self, workspace_id: str):
+    def test_create_with_parent(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        parent_folder = self.workspace_folder_singleton(workspace_id)
+        parent_folder = folder_singleton
         obj = self.rand_workspace_folder(workspace_id)
         obj.item.fields["parentFolderId"] = parent_folder.item.api.id
         obj.create()
@@ -111,33 +117,29 @@ class TestWorkspaceFolder:
         assert obj.item.api.workspaceId == workspace_id
         assert obj.item.api.parentFolderId == parent_folder.item.api.id
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        obj = self.workspace_folder_singleton(workspace_id)
-        new_name = f"F_{uuid.uuid4().hex[:8].replace('-', '')}"
-        assert obj.item.api.parentFolderId is None
-        obj.update(displayName=new_name)
-        assert obj.item.api.displayName == new_name
+        new_name = rand_workspace_item_name("F")
+        assert folder_singleton.item.api.parentFolderId is None
+        folder_singleton.update(displayName=new_name)
+        assert folder_singleton.item.api.displayName == new_name
 
-    def test_fetch_and_delete(self, workspace_id: str):
+    def test_fetch_and_delete(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        obj = self.workspace_folder_singleton(workspace_id)
-        obj.fetch()
-        obj.delete()
+        folder_singleton.fetch()
+        folder_singleton.delete()
         with pytest.raises(requests.HTTPError):
-            obj.fetch()
+            folder_singleton.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        obj = self.workspace_folder_singleton(workspace_id)
-        fetched_obj = WorkspaceFolder.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = WorkspaceFolder.get_by_name(folder_singleton.item.api.workspaceId, folder_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == folder_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        obj = self.workspace_folder_singleton(workspace_id)
-        fetched_obj = WorkspaceFolder.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = WorkspaceFolder.get_by_id(workspace_id, folder_singleton.item.api.id)
+        assert fetched_obj.item.api.id == folder_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -149,12 +151,11 @@ class TestWorkspaceFolder:
             assert obj.item.api.id is not None
             assert obj.item.api.displayName is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
         obj = self.rand_workspace_folder(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert folder_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
@@ -164,9 +165,7 @@ class TestWorkspaceFolder:
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        obj = self.rand_workspace_folder(workspace_id)
-        obj.create()
         with pytest.raises(requests.HTTPError):
-            obj.fetch_definition()
+            folder_singleton.fetch_definition()

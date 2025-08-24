@@ -109,10 +109,16 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             )
         ]
 
-    def create(self, timeout: int = 90, wait_for_completion: bool = True) -> None:
+    def create(
+            self,
+            timeout: int = 90,
+            max_retry_seconds_at_202: int = 5,
+            wait_for_completion: bool = True
+    ) -> None:
         super().create(
             wait_for_completion=wait_for_completion,
-            timeout=timeout
+            timeout=timeout,
+            max_retry_seconds_at_202=max_retry_seconds_at_202
         )
         if not wait_for_completion:
             return

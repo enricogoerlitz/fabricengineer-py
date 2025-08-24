@@ -4,6 +4,8 @@ uv run pytest src/tests/api/fabric/client -v
 """
 import uuid
 
+import pytest
+
 from fabricengineer.api.fabric.client.fabric import FabricAPIClient, get_env_svc, set_global_fabric_client
 from fabricengineer.api.auth import MicrosoftExtraSVC
 
@@ -44,6 +46,18 @@ class TestFabricAPIClient:
         assert len(client.headers.get("Authorization", "")) > len("Bearer TOKEN")
         assert client.headers["Content-Type"] == "application/json"
         assert client.workspaces is not None
+
+    def test_check_headers_auth(self):
+        client = FabricAPIClient(api_version="v1")
+
+        client.check_headers_auth()  # no exception raise
+
+        client._headers = {
+            "Authorization": "Bearer ",
+            "Content-Type": "application/json"
+        }
+        with pytest.raises(PermissionError, match="Authorization header is missing."):
+            client.check_headers_auth()
 
     def test_global_fabric_import(self):
         from fabricengineer.api.fabric.client.fabric import fabric_client

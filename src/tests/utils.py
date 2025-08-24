@@ -1,10 +1,20 @@
 import io
 import os
 import logging
+import uuid
 
 from typing import Any, Callable
 from contextlib import redirect_stdout, contextmanager
+from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
 from fabricengineer.logging.logger import logger
+
+
+def authenticate() -> None:
+    set_global_fabric_client(get_env_svc())
+
+
+def rand_workspace_item_name(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex.replace('-', '')}"
 
 
 class NotebookUtilsFSMock:

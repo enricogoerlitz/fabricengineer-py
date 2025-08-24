@@ -106,7 +106,7 @@ class FabricAPIClient:
     def check_headers_auth(self) -> None:
         token = self.headers.get("Authorization", "").replace("Bearer ", "")
         if len(token) < 10:
-            raise ValueError("Authorization header is missing.")
+            raise PermissionError("Authorization header is missing.")
 
     def _url(self, path: str) -> str:
         path = self._prep_path(path)

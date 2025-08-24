@@ -47,6 +47,7 @@ class CopyItemDefinition(ItemDefinitionInterface):
         try:
             resp = fabric_client().post(url, payload={})
             check_http_response(resp)
+            definition = resp.json()
             if resp.status_code == 202:
                 definition = http_wait_for_completion_after_202(resp, retry_max_seconds=1)
             return definition["definition"]
@@ -100,6 +101,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         try:
             resp = fabric_client().workspaces.get(workspace_id, item_path)
             check_http_response(resp)
+            print("RESP-LIST:", resp.json()["value"])
             for item in resp.json()["value"]:
                 if item["displayName"] == name:
                     return create_item_type_fn(item)
@@ -185,6 +187,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             check_http_response(resp)
 
             item = resp.json()
+            logger.info(f"RESP: {resp.status_code}, {item}")
             if resp.status_code == 202 and item is None:
                 if not wait_for_completion:
                     return
@@ -201,11 +204,20 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             logger.error(f"Error creating item '{self}'.\n{e}")
             raise e
 
-    def create_if_not_exists(self) -> None:
+    def create_if_not_exists(
+            self,
+            wait_for_completion: bool = True,
+            max_retry_seconds_at_202: int = 5,
+            timeout: int = 90
+    ) -> None:
         if self.exists():
             logger.info(f"Item already exists, skipping creation. {self}")
             return
-        self.create()
+        self.create(
+            wait_for_completion=wait_for_completion,
+            max_retry_seconds_at_202=max_retry_seconds_at_202,
+            timeout=timeout
+        )
 
     def update(self, **fields) -> None:
         try:

@@ -1,5 +1,4 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
@@ -8,6 +7,20 @@ from fabricengineer.api.fabric.workspace.items.warehouse import (
     WarehouseAPIData,
     WarehouseProperties
 )
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def warehouse_singleton(workspace_id: str):
+    """Fixture to create a Warehouse instance."""
+    name = rand_workspace_item_name("WH")
+    warehouse = Warehouse(
+        workspace_id=workspace_id,
+        name=name,
+        description="Test Warehouse"
+    )
+    warehouse.create()
+    return warehouse
 
 
 class TestWarehouseProperties:
@@ -178,24 +191,17 @@ class TestWarehouseAPIData:
 
 
 class TestWarehouse:
-    test_wh: Warehouse = None
 
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
     def rand_warehouse(self, workspace_id: str) -> Warehouse:
-        name = f"WH_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("WH")
         return Warehouse(
             workspace_id=workspace_id,
             name=name,
             description="Test Warehouse",
         )
-
-    def warehouse_singleton(self, workspace_id: str) -> Warehouse:
-        if self.test_wh is None or not self.test_wh.exists():
-            self.test_wh = self.rand_warehouse(workspace_id)
-            self.test_wh.create()
-        return self.test_wh
 
     def test_init_warehouse(self, workspace_id: str):
         warehouse: Warehouse = self.rand_warehouse(workspace_id)
@@ -249,32 +255,30 @@ class TestWarehouse:
         assert obj.item.api.properties.collationType is not None
         assert obj.item.api.properties.lastUpdatedTime is not None
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        obj = self.warehouse_singleton(workspace_id)
-        assert obj.item.api.description == "Test Warehouse"
-        obj.update(description="Updated Description")
-        assert obj.item.api.description == "Updated Description"
+        assert warehouse_singleton.item.api.description == "Test Warehouse"
+        warehouse_singleton.update(description="Updated Description")
+        assert warehouse_singleton.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.warehouse_singleton(workspace_id)
+        obj = self.rand_warehouse(workspace_id)
+        obj.create()
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
             obj.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        obj = self.warehouse_singleton(workspace_id)
-        fetched_obj = Warehouse.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Warehouse.get_by_name(warehouse_singleton.item.api.workspaceId, warehouse_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == warehouse_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        obj = self.warehouse_singleton(workspace_id)
-        fetched_obj = Warehouse.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Warehouse.get_by_id(warehouse_singleton.item.api.workspaceId, warehouse_singleton.item.api.id)
+        assert fetched_obj.item.api.id == warehouse_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -287,12 +291,11 @@ class TestWarehouse:
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, warehouse_singleton: Warehouse):
         self.authenticate()
         obj = self.rand_warehouse(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert warehouse_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
@@ -302,9 +305,7 @@ class TestWarehouse:
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, warehouse_singleton: Warehouse):
         self.authenticate()
-        obj = self.rand_warehouse(workspace_id)
-        obj.create()
         with pytest.raises(requests.HTTPError):
-            obj.fetch_definition()
+            warehouse_singleton.fetch_definition()

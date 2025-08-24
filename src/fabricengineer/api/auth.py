@@ -1,8 +1,9 @@
 import requests
 
 from dataclasses import dataclass
+from fabricengineer.logging import logger
 
-from fabricengineer.api.utils import check_http_response
+# from fabricengineer.api.utils import check_http_response
 
 
 @dataclass
@@ -26,7 +27,10 @@ class MicrosoftExtraSVC:
         }
 
         resp = requests.post(token_url, data=data)
-        check_http_response(resp)
+        if resp.status_code != 200:
+            logger.error(f"Failed to obtain token: {resp.status_code} {resp.text}")
+            resp.raise_for_status()
+
         token = resp.json()["access_token"]
 
         return token

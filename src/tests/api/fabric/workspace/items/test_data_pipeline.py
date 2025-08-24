@@ -1,5 +1,4 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
@@ -9,6 +8,20 @@ from fabricengineer.api.fabric.workspace.items.data_pipeline import (
     CopyDataPipelineDefinition,
     ZIPDataPipelineDefinition
 )
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def data_pipeline_singleton(workspace_id: str) -> DataPipeline:
+    """Fixture to create a DataPipeline instance."""
+    name = rand_workspace_item_name("DP")
+    data_pipeline = DataPipeline(
+        workspace_id=workspace_id,
+        name=name,
+        description="Test DataPipeline"
+    )
+    data_pipeline.create()
+    return data_pipeline
 
 
 class TestDataPipelineAPIData:
@@ -53,18 +66,12 @@ class TestDataPipeline:
         set_global_fabric_client(get_env_svc())
 
     def rand_data_pipeline(self, workspace_id: str) -> DataPipeline:
-        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("DP")
         return DataPipeline(
             workspace_id=workspace_id,
             name=name,
             description="Test DataPipeline"
         )
-
-    def data_pipeline_singleton(self, workspace_id: str) -> DataPipeline:
-        if self.test_dp is None or not self.test_dp.exists():
-            self.test_dp = self.rand_data_pipeline(workspace_id)
-            self.test_dp.create()
-        return self.test_dp
 
     def test_init_data_pipeline(self, workspace_id: str):
         data_pipeline: DataPipeline = self.rand_data_pipeline(workspace_id)
@@ -101,7 +108,7 @@ class TestDataPipeline:
         self.authenticate()
         path = "./src/tests/data/pipelines/TEST_PIPELINE.zip"
         definition = ZIPDataPipelineDefinition(zip_path=path)
-        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("DP")
         obj = DataPipeline(
             workspace_id=workspace_id,
             name=name,
@@ -115,17 +122,16 @@ class TestDataPipeline:
         assert obj.item.api.type == "DataPipeline"
         assert obj.fetch_definition() is not None
 
-    def test_create_with_copy_fabric_data_pipeline(self, workspace_id: str):
+    def test_create_with_copy_fabric_data_pipeline(self, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        obj_template = self.data_pipeline_singleton(workspace_id)
-        obj_template
+        obj_template = data_pipeline_singleton
         definition = CopyDataPipelineDefinition(
-            workspace_id=workspace_id,
+            workspace_id=obj_template.item.api.workspaceId,
             pipeline_id=obj_template.item.api.id
         )
-        name = f"DP_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("DP")
         obj = DataPipeline(
-            workspace_id=workspace_id,
+            workspace_id=obj_template.item.api.workspaceId,
             name=name,
             description="Test DataPipeline",
             definition=definition
@@ -137,32 +143,30 @@ class TestDataPipeline:
         assert obj.item.api.type == "DataPipeline"
         assert obj.fetch_definition() is not None
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        obj = self.data_pipeline_singleton(workspace_id)
-        assert obj.item.api.description == "Test DataPipeline"
-        obj.update(description="Updated Description")
-        assert obj.item.api.description == "Updated Description"
+        assert data_pipeline_singleton.item.api.description == "Test DataPipeline"
+        data_pipeline_singleton.update(description="Updated Description")
+        assert data_pipeline_singleton.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.data_pipeline_singleton(workspace_id)
+        obj = self.rand_data_pipeline(workspace_id)
+        obj.create()
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
             obj.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, workspace_id: str, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        obj = self.data_pipeline_singleton(workspace_id)
-        fetched_obj = DataPipeline.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = DataPipeline.get_by_name(workspace_id, data_pipeline_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == data_pipeline_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, workspace_id: str, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        obj = self.data_pipeline_singleton(workspace_id)
-        fetched_obj = DataPipeline.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = DataPipeline.get_by_id(workspace_id, data_pipeline_singleton.item.api.id)
+        assert fetched_obj.item.api.id == data_pipeline_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -175,12 +179,11 @@ class TestDataPipeline:
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, data_pipeline_singleton: DataPipeline):
         self.authenticate()
         obj = self.rand_data_pipeline(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert data_pipeline_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
@@ -190,10 +193,8 @@ class TestDataPipeline:
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, data_pipeline_singleton: DataPipeline):
         self.authenticate()
-        obj = self.rand_data_pipeline(workspace_id)
-        obj.create()
-        definition = obj.fetch_definition()
+        definition = data_pipeline_singleton.fetch_definition()
         assert definition is not None
         assert isinstance(definition, dict)

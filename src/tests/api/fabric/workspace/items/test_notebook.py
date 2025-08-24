@@ -9,6 +9,20 @@ from fabricengineer.api.fabric.workspace.items.notebook import (
     CopyFabricNotebookDefinition,
     IPYNBNotebookDefinition
 )
+from tests.utils import rand_workspace_item_name
+
+
+@pytest.fixture
+def notebook_singleton(workspace_id: str):
+    """Fixture to create a Notebook instance."""
+    name = rand_workspace_item_name("NB")
+    notebook = Notebook(
+        workspace_id=workspace_id,
+        name=name,
+        description="Test Notebook"
+    )
+    notebook.create()
+    return notebook
 
 
 class TestNotebookAPIData:
@@ -53,18 +67,12 @@ class TestNotebook:
         set_global_fabric_client(get_env_svc())
 
     def rand_notebook(self, workspace_id: str) -> Notebook:
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("NB")
         return Notebook(
             workspace_id=workspace_id,
             name=name,
             description="Test Notebook"
         )
-
-    def notebook_singleton(self, workspace_id: str) -> Notebook:
-        if self.test_nb is None or not self.test_nb.exists():
-            self.test_nb = self.rand_notebook(workspace_id)
-            self.test_nb.create()
-        return self.test_nb
 
     def test_init_notebook(self, workspace_id: str):
         notebook: Notebook = self.rand_notebook(workspace_id)
@@ -80,7 +88,6 @@ class TestNotebook:
             "type": "Notebook"
         }
         obj = Notebook.from_json(json_data)
-        print("OBJ:", obj)
         assert obj.item.fields.get("displayName") == json_data["displayName"]
         assert obj.item.fields.get("description") == json_data["description"]
         assert obj.item.api.displayName == json_data["displayName"]
@@ -115,15 +122,14 @@ class TestNotebook:
         assert obj.item.api.type == "Notebook"
         assert obj.fetch_definition() is not None
 
-    def test_create_with_copy_fabric_notebook(self, workspace_id: str):
+    def test_create_with_copy_fabric_notebook(self, workspace_id: str, notebook_singleton: Notebook):
         self.authenticate()
-        obj_template = self.notebook_singleton(workspace_id)
-        obj_template
+        obj_template = notebook_singleton
         definition = CopyFabricNotebookDefinition(
             workspace_id=workspace_id,
             notebook_id=obj_template.item.api.id
         )
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("NB")
         obj = Notebook(
             workspace_id=workspace_id,
             name=name,
@@ -137,32 +143,30 @@ class TestNotebook:
         assert obj.item.api.type == "Notebook"
         assert obj.fetch_definition() is not None
 
-    def test_update(self, workspace_id: str):
+    def test_update(self, notebook_singleton: Notebook):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        assert obj.item.api.description == "Test Notebook"
-        obj.update(description="Updated Description")
-        assert obj.item.api.description == "Updated Description"
+        assert notebook_singleton.item.api.description == "Test Notebook"
+        notebook_singleton.update(description="Updated Description")
+        assert notebook_singleton.item.api.description == "Updated Description"
 
     def test_fetch_and_delete(self, workspace_id: str):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
+        obj = self.rand_notebook(workspace_id)
+        obj.create()
         obj.fetch()
         obj.delete()
         with pytest.raises(requests.HTTPError):
             obj.fetch()
 
-    def test_get_by_name(self, workspace_id: str):
+    def test_get_by_name(self, notebook_singleton: Notebook):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        fetched_obj = Notebook.get_by_name(workspace_id, obj.item.api.displayName)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Notebook.get_by_name(notebook_singleton.item.api.workspaceId, notebook_singleton.item.api.displayName)
+        assert fetched_obj.item.api.id == notebook_singleton.item.api.id
 
-    def test_get_by_id(self, workspace_id: str):
+    def test_get_by_id(self, workspace_id: str, notebook_singleton: Notebook):
         self.authenticate()
-        obj = self.notebook_singleton(workspace_id)
-        fetched_obj = Notebook.get_by_id(workspace_id, obj.item.api.id)
-        assert fetched_obj.item.api.id == obj.item.api.id
+        fetched_obj = Notebook.get_by_id(notebook_singleton.item.api.workspaceId, notebook_singleton.item.api.id)
+        assert fetched_obj.item.api.id == notebook_singleton.item.api.id
 
     def test_list(self, workspace_id: str):
         self.authenticate()
@@ -175,12 +179,11 @@ class TestNotebook:
             assert obj.item.api.displayName is not None
             assert obj.item.api.description is not None
 
-    def test_exists(self, workspace_id: str):
+    def test_exists(self, workspace_id: str, notebook_singleton: Notebook):
         self.authenticate()
         obj = self.rand_notebook(workspace_id)
         assert not obj.exists()
-        obj.create()
-        assert obj.exists()
+        assert notebook_singleton.exists()
 
     def test_create_if_not_exists(self, workspace_id: str):
         self.authenticate()
@@ -190,10 +193,8 @@ class TestNotebook:
         assert obj.exists()
         obj.create_if_not_exists()
 
-    def test_fetch_definition(self, workspace_id: str):
+    def test_fetch_definition(self, notebook_singleton: Notebook):
         self.authenticate()
-        obj = self.rand_notebook(workspace_id)
-        obj.create()
-        definition = obj.fetch_definition()
+        definition = notebook_singleton.fetch_definition()
         assert definition is not None
         assert isinstance(definition, dict)
