@@ -2,7 +2,7 @@ import requests
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Generic, TypeVar, Any, Iterator, Callable
+from typing import Optional, Generic, List, TypeVar, Any, Iterator, Callable, Literal
 
 from fabricengineer.api.fabric.client.fabric import fabric_client
 from fabricengineer.api.utils import check_http_response, http_wait_for_completion_after_202
@@ -56,29 +56,52 @@ class CopyItemDefinition(ItemDefinitionInterface):
             raise e
 
 
+@dataclass
+class WorkspaceItemDependency:
+    item: "BaseWorkspaceItem"
+    dependency_type: Literal["folder"]
+    field: str
+
+
 class BaseWorkspaceItem(Generic[TItemAPIData]):
+    _upstream_items: list[WorkspaceItemDependency] = []
+    _downstream_items: list["BaseWorkspaceItem"] = []
+
     def __init__(
             self,
             create_type_fn: Callable,
             base_item_url: str,
             item: FabricItem[TItemAPIData],
-            workspace_id: str = None
+            workspace_id: str = None,
+            depends_on: list[WorkspaceItemDependency] = None
     ):
         self._create_item_type_fn = create_type_fn
         self._base_item_url = base_item_url
         self._workspace_id = workspace_id
         self._item: FabricItem[TItemAPIData] = item
+        self._upstream_items = depends_on or []
+        self._downstream_items = []
+        self._register_at_upstream_items(depends_on)
 
     @property
     def item(self) -> FabricItem[TItemAPIData]:
         return self._item
+
+    @property
+    def upstream_items(self) -> list[WorkspaceItemDependency]:
+        return self._upstream_items
+
+    @property
+    def downstream_items(self) -> list["BaseWorkspaceItem"]:
+        return self._downstream_items
 
     @staticmethod
     def get_by_id(
             create_item_type_fn: Callable,
             workspace_id: str,
             base_item_url: str,
-            id: str
+            id: str,
+            log_err: bool = True
     ) -> Any:
         item_path = f"{base_item_url}/{id}"
         try:
@@ -87,7 +110,8 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             item = resp.json()
             return create_item_type_fn(item)
         except Exception as e:
-            logger.error(f"Error fetching item at path '{item_path}'.\n{e}")
+            if log_err:
+                logger.error(f"Error fetching item at path '{item_path}'.\n{e}")
             raise e
 
     @staticmethod
@@ -95,19 +119,20 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             create_item_type_fn: Callable,
             workspace_id: str,
             base_item_url: str,
-            name: str
+            name: str,
+            log_err: bool = True
     ) -> Any:
         item_path = base_item_url
         try:
             resp = fabric_client().workspaces.get(workspace_id, item_path)
             check_http_response(resp)
-            print("RESP-LIST:", resp.json()["value"])
             for item in resp.json()["value"]:
                 if item["displayName"] == name:
                     return create_item_type_fn(item)
             raise requests.HTTPError(f"404 Client Error: Item with displayName '{name}' not found.")
         except Exception as e:
-            logger.error(f"Error fetching item at path '{item_path}'.\n{e}")
+            if log_err:
+                logger.error(f"Error fetching item at path '{item_path}'.\n{e}")
             raise e
 
     @staticmethod
@@ -122,7 +147,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             logger.error(f"Error fetching item at path '{item_path}': {e}")
             raise e
 
-    def fetch(self) -> "BaseWorkspaceItem":
+    def fetch(self, log_err: bool = True) -> "BaseWorkspaceItem":
         if self._item.api is None:
             if self._item.fields.get("displayName") is None:
                 raise ValueError("Item displayName is required to fetch item by name.")
@@ -130,7 +155,8 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
                 create_item_type_fn=self._create_item_type_fn,
                 workspace_id=self._workspace_id,
                 base_item_url=self._base_item_url,
-                name=self._item.fields["displayName"]
+                name=self._item.fields["displayName"],
+                log_err=log_err
             ).item.api
             return self
 
@@ -138,7 +164,8 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             create_item_type_fn=self._create_item_type_fn,
             workspace_id=self._workspace_id,
             base_item_url=self._base_item_url,
-            id=self._item.api.id
+            id=self._item.api.id,
+            log_err=log_err
         ).item.api
         return self
 
@@ -160,7 +187,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
     def exists(self) -> bool:
         try:
-            return self.fetch()._item.api is not None
+            return self.fetch(log_err=False)._item.api is not None
         except requests.HTTPError as e:
             if "404 Client Error:" in str(e):
                 return False
@@ -177,7 +204,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             timeout: int = 90
     ) -> None:
         item_path = self._base_item_url
-        payload = self._item.fields
+        payload = self._get_create_payload()
         try:
             resp = fabric_client().workspaces.post(
                 workspace_id=self._workspace_id,
@@ -187,7 +214,6 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             check_http_response(resp)
 
             item = resp.json()
-            logger.info(f"RESP: {resp.status_code}, {item}")
             if resp.status_code == 202 and item is None:
                 if not wait_for_completion:
                     return
@@ -254,6 +280,26 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         except Exception as e:
             logger.error(f"Error deleting item '{self}'.\n{e}")
             raise e
+
+    def _get_create_payload(self) -> dict:
+        for dependency in self._upstream_items:
+            if dependency.item.item.api is None:
+                raise ValueError(f"Dependency '{dependency.field}' is not created yet.")
+            self._item.fields[dependency.field] = dependency.item.item.api.id
+        print("Create payload:", self._item.fields)
+        return self._item.fields
+
+    def _register_downstream_item(self, dependency: "BaseWorkspaceItem") -> None:
+        if not isinstance(dependency, BaseWorkspaceItem):
+            raise ValueError("Dependency must be an instance of BaseWorkspaceItem.")
+        self._downstream_items.append(dependency)
+
+    def _register_at_upstream_items(self, dependencies: List[WorkspaceItemDependency]) -> None:
+        if dependencies is None:
+            return
+        dependency: WorkspaceItemDependency
+        for dependency in dependencies:
+            dependency.item._register_downstream_item(self)
 
     def _retry_after(self, resp: requests.Response) -> int:
         return min(int(resp.headers.get("Retry-After", 5)), 5)

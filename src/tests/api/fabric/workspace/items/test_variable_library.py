@@ -9,12 +9,14 @@ from fabricengineer.api.fabric.workspace.items.variable_library import (
     VariableLibraryDefinition,
     VariableLibraryVariable
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from tests.utils import rand_workspace_item_name
 
 
 @pytest.fixture
 def varlib_singleton(workspace_id: str):
     """Fixture to create a VariableLibrary instance."""
+    set_global_fabric_client(get_env_svc())
     name = rand_workspace_item_name("VL")
     varlib = VariableLibrary(
         workspace_id=workspace_id,
@@ -155,12 +157,13 @@ class TestVariableLibrary:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_variable_library(self, workspace_id: str) -> VariableLibrary:
+    def rand_variable_library(self, workspace_id: str, folder: WorkspaceFolder = None) -> VariableLibrary:
         name = rand_workspace_item_name("VL")
         return VariableLibrary(
             workspace_id=workspace_id,
             name=name,
-            description="Test VariableLibrary"
+            description="Test VariableLibrary",
+            folder=folder
         )
 
     def test_init_variable_library(self, workspace_id: str):
@@ -191,6 +194,16 @@ class TestVariableLibrary:
     def test_create(self, workspace_id: str):
         self.authenticate()
         obj = self.rand_variable_library(workspace_id)
+        obj.create(max_retry_seconds_at_202=1)
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "VariableLibrary"
+        assert obj.item.api.properties.activeValueSetName is not None
+
+    def test_create_in_folder(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
+        obj = self.rand_variable_library(workspace_id, folder_singleton)
         obj.create(max_retry_seconds_at_202=1)
         assert obj.item.api.id is not None
         assert obj.item.api.displayName == obj.item.fields.get("displayName")

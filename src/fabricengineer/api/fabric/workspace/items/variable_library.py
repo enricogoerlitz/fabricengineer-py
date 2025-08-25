@@ -6,8 +6,10 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,
-    ItemDefinitionInterface
+    ItemDefinitionInterface,
+    WorkspaceItemDependency
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
 
 ITEM_PATH = "/VariableLibraries"
@@ -20,6 +22,7 @@ class VariableLibraryProperties:
 
 @dataclass
 class VariableLibraryAPIData(BaseItemAPIData):
+    folderId: str = None
     properties: VariableLibraryProperties = field(default_factory=VariableLibraryProperties)
 
 
@@ -129,16 +132,22 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         workspace_id: str,
         name: str,
         description: str = None,
-        folder_id: str = None,
+        folder: WorkspaceFolder = None,
         definition: ItemDefinitionInterface = None,
         api_data: VariableLibraryAPIData = None
     ):
+        depends_on = None
+        folder = None if not isinstance(folder, WorkspaceFolder) else folder
+        if folder is not None:
+            depends_on = [
+                WorkspaceItemDependency(folder, "folder", "folderId")
+            ]
         definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New VariableLibrary"
         item = FabricItem[VariableLibraryAPIData](
             displayName=name,
             description=description,
-            folderId=folder_id,
+            folderId=folder,
             definition=definition,
             api_data=api_data
         )
@@ -146,7 +155,8 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
             create_type_fn=VariableLibrary.from_json,
             base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
-            item=item
+            item=item,
+            depends_on=depends_on
         )
 
     @staticmethod

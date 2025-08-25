@@ -1,6 +1,8 @@
 import os
 import shutil
 import pytest
+import time
+import requests
 
 from pyspark.sql import SparkSession
 from delta import configure_spark_with_delta_pip
@@ -75,6 +77,19 @@ def workspace():
 
 
 @pytest.fixture
+def folder_singleton(workspace_id: str):
+    """Fixture to create a Folder instance."""
+    set_global_fabric_client(svc)
+    name = "F_TESTING_FOLDER"
+    folder = WorkspaceFolder(
+        workspace_id=workspace_id,
+        name=name
+    )
+    folder.create_if_not_exists()
+    return folder
+
+
+@pytest.fixture
 def msf_svc():
     """Create a mock for Microsoft Fabric Service."""
     set_global_fabric_client(svc)
@@ -122,18 +137,50 @@ def global_cleanup_fabric_items():
     print("CLEANUP: Removing all temporary fabric items.")
 
     set_global_fabric_client(svc)
+    workspace_id = os.getenv("WORKSPACE_ID")
+
+    def cleanup_folders():
+        rate_limit_wait_seconds = 60
+        folders = WorkspaceFolder.list(workspace_id)
+        deleted_folders = set()
+        while len(deleted_folders) != len(folders):
+            try:
+                has_child_folder_ids = {
+                    folder.item.api.parentFolderId
+                    for folder in folders
+                    if folder.item.api.parentFolderId and folder not in deleted_folders
+                }
+                for folder in folders:
+                    if folder in deleted_folders:
+                        continue
+                    if folder.item.api.id in has_child_folder_ids:
+                        continue
+                    print("Delete folder:", folder.item.api.displayName)
+                    folder.delete()
+                    deleted_folders.add(folder)
+            except requests.HTTPError as e:
+                if e.response.status_code == 429:
+                    print(f"429 Too Many Requests: Wait for {rate_limit_wait_seconds} seconds")
+                    time.sleep(rate_limit_wait_seconds)
+                elif e.response.status_code == 404:
+                    deleted_folders.add(folder)
+                elif e.response.status_code == 400 and "FolderNotEmpty" in e.response.text:
+                    deleted_folders.add(folder)
+                else:
+                    raise e
+            except Exception as e:
+                raise e
 
     def cleanup_items():
-        workspace_id = os.getenv("WORKSPACE_ID")
         items = (
             Lakehouse.list(workspace_id) +
             Warehouse.list(workspace_id) +
             DataPipeline.list(workspace_id) +
             Notebook.list(workspace_id) +
-            VariableLibrary.list(workspace_id) +
-            WorkspaceFolder.list(workspace_id)
+            VariableLibrary.list(workspace_id)
         )
         for item in items:
             item.delete()
 
     cleanup_items()
+    cleanup_folders()

@@ -1,5 +1,4 @@
 import pytest
-import uuid
 import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
@@ -9,12 +8,14 @@ from fabricengineer.api.fabric.workspace.items.notebook import (
     CopyFabricNotebookDefinition,
     IPYNBNotebookDefinition
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from tests.utils import rand_workspace_item_name
 
 
 @pytest.fixture
 def notebook_singleton(workspace_id: str):
     """Fixture to create a Notebook instance."""
+    set_global_fabric_client(get_env_svc())
     name = rand_workspace_item_name("NB")
     notebook = Notebook(
         workspace_id=workspace_id,
@@ -66,12 +67,13 @@ class TestNotebook:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_notebook(self, workspace_id: str) -> Notebook:
+    def rand_notebook(self, workspace_id: str, folder: WorkspaceFolder = None) -> Notebook:
         name = rand_workspace_item_name("NB")
         return Notebook(
             workspace_id=workspace_id,
             name=name,
-            description="Test Notebook"
+            description="Test Notebook",
+            folder=folder
         )
 
     def test_init_notebook(self, workspace_id: str):
@@ -104,11 +106,20 @@ class TestNotebook:
         assert obj.item.api.description == obj.item.fields.get("description")
         assert obj.item.api.type == "Notebook"
 
+    def test_create_in_folder(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
+        obj = self.rand_notebook(workspace_id, folder_singleton)
+        obj.create(max_retry_seconds_at_202=1)
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "Notebook"
+
     def test_create_with_ipynb(self, workspace_id: str):
         self.authenticate()
         path = "./src/tests/data/notebooks/TEST_NOTEBOOK.ipynb"
         definition = IPYNBNotebookDefinition(ipynb_path=path)
-        name = f"NB_{uuid.uuid4().hex[:8].replace('-', '')}"
+        name = rand_workspace_item_name("NB")
         obj = Notebook(
             workspace_id=workspace_id,
             name=name,

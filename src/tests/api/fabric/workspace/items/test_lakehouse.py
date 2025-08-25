@@ -3,12 +3,14 @@ import requests
 
 from fabricengineer.api.fabric.client.fabric import set_global_fabric_client, get_env_svc
 from fabricengineer.api.fabric.workspace.items.lakehouse import Lakehouse
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from tests.utils import rand_workspace_item_name
 
 
 @pytest.fixture
 def lakehouse_singleton(workspace_id: str):
     """Fixture to create a Lakehouse instance."""
+    set_global_fabric_client(get_env_svc())
     name = rand_workspace_item_name("LH")
     lakehouse = Lakehouse(
         workspace_id=workspace_id,
@@ -24,12 +26,13 @@ class TestLakehouse:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_lakehouse(self, workspace_id: str) -> Lakehouse:
+    def rand_lakehouse(self, workspace_id: str, folder: WorkspaceFolder = None) -> Lakehouse:
         name = rand_workspace_item_name("LH")
         return Lakehouse(
             workspace_id=workspace_id,
             name=name,
-            description="Test Lakehouse"
+            description="Test Lakehouse",
+            folder=folder
         )
 
     def test_init_lakehouse(self, workspace_id: str):
@@ -37,9 +40,9 @@ class TestLakehouse:
         assert lakehouse.item.fields.get("displayName", "").startswith("LH_")
         assert lakehouse.item.fields.get("description") == "Test Lakehouse"
 
-    def test_from_json(self, workspace_id: str):
+    def test_from_json(self):
         json_data = {
-            "workspaceId": workspace_id,
+            "workspaceId": "<WorkspaceId>",
             "displayName": "WP_Test",
             "description": "Test Lakehouse from JSON",
             "id": "12345",
@@ -84,6 +87,15 @@ class TestLakehouse:
         assert obj.item.api.properties.sqlEndpointProperties.id is not None
         assert obj.item.api.properties.sqlEndpointProperties.connectionString is not None
         assert obj.item.api.properties.sqlEndpointProperties.provisioningStatus is not None
+
+    def test_create_in_folder(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
+        obj = self.rand_lakehouse(workspace_id, folder_singleton)
+        obj.create(wait_for_completion=False)
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "Lakehouse"
 
     def test_update(self, lakehouse_singleton: Lakehouse):
         self.authenticate()

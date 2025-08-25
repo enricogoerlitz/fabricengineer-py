@@ -10,8 +10,10 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseItemAPIData,
     FabricItem,
     ItemDefinitionInterface,
-    CopyItemDefinition
+    CopyItemDefinition,
+    WorkspaceItemDependency
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
 
 ITEM_PATH = "/notebooks"
@@ -25,7 +27,7 @@ def read_ipynb_notebook(file_path: str) -> dict:
 
 @dataclass
 class NotebookAPIData(BaseItemAPIData):
-    pass
+    folderId: str = None
 
 
 class CopyFabricNotebookDefinition(CopyItemDefinition):
@@ -98,16 +100,22 @@ class Notebook(BaseWorkspaceItem[NotebookAPIData]):
         workspace_id: str,
         name: str,
         description: str = None,
-        folder_id: str = None,
+        folder: WorkspaceFolder = None,
         definition: ItemDefinitionInterface = None,
         api_data: NotebookAPIData = None
     ):
+        depends_on = None
+        folder = None if not isinstance(folder, WorkspaceFolder) else folder
+        if folder is not None:
+            depends_on = [
+                WorkspaceItemDependency(folder, "folder", "folderId")
+            ]
         definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New Notebook"
         item = FabricItem[NotebookAPIData](
             displayName=name,
             description=description,
-            folderId=folder_id,
+            folderId=folder,
             definition=definition,
             api_data=api_data
         )
@@ -115,7 +123,8 @@ class Notebook(BaseWorkspaceItem[NotebookAPIData]):
             create_type_fn=Notebook.from_json,
             base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
-            item=item
+            item=item,
+            depends_on=depends_on
         )
 
     @staticmethod

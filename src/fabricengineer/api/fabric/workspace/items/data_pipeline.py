@@ -8,9 +8,11 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseItemAPIData,
     FabricItem,
     ItemDefinitionInterface,
-    CopyItemDefinition
+    CopyItemDefinition,
+    WorkspaceItemDependency
 )
 from fabricengineer.api.utils import base64_encode
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
 
 ITEM_PATH = "/dataPipelines"
@@ -39,7 +41,7 @@ def read_zip_pipeline_json(zip_filepath: str):
 
 @dataclass
 class DataPipelineAPIData(BaseItemAPIData):
-    pass
+    folderId: str = None
 
 
 class CopyDataPipelineDefinition(CopyItemDefinition):
@@ -99,16 +101,22 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
         workspace_id: str,
         name: str,
         description: str = None,
-        folder_id: str = None,
+        folder: WorkspaceFolder = None,
         definition: ItemDefinitionInterface = None,
         api_data: DataPipelineAPIData = None
     ):
+        depends_on = None
+        folder = None if not isinstance(folder, WorkspaceFolder) else folder
+        if folder is not None:
+            depends_on = [
+                WorkspaceItemDependency(folder, "folder", "folderId")
+            ]
         definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New Data Pipeline"
         item = FabricItem[DataPipelineAPIData](
             displayName=name,
             description=description,
-            folderId=folder_id,
+            folderId=folder,
             definition=definition,
             api_data=api_data
         )
@@ -116,7 +124,8 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
             create_type_fn=DataPipeline.from_json,
             base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
-            item=item
+            item=item,
+            depends_on=depends_on
         )
 
     @staticmethod

@@ -1,7 +1,13 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
+from fabricengineer.api.fabric.workspace.base import (
+    BaseWorkspaceItem,
+    BaseItemAPIData,
+    FabricItem,
+    WorkspaceItemDependency
+)
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
 
 ITEM_PATH = "/warehouses"
@@ -20,6 +26,7 @@ class WarehouseProperties:
 
 @dataclass
 class WarehouseAPIData(BaseItemAPIData):
+    folderId: str = None
     properties: WarehouseProperties = field(default_factory=WarehouseProperties)
 
 
@@ -32,15 +39,21 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
         workspace_id: str,
         name: str,
         description: str = None,
-        folder_id: str = None,
+        folder: str = None,
         collation_type: str = "Latin1_General_100_BIN2_UTF8",  # Case-sensitive
         api_data: WarehouseAPIData = None
     ):
+        depends_on = None
+        folder = None if not isinstance(folder, WorkspaceFolder) else folder
+        if folder is not None:
+            depends_on = [
+                WorkspaceItemDependency(folder, "folder", "folderId")
+            ]
         description = description or "New Warehouse"
         item = FabricItem[WarehouseAPIData](
             displayName=name,
             description=description,
-            folderId=folder_id,
+            folderId=folder,
             creationPayload={
                 "collationType": collation_type
             },
@@ -50,7 +63,8 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
             create_type_fn=Warehouse.from_json,
             base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
-            item=item
+            item=item,
+            depends_on=depends_on
         )
 
     @staticmethod

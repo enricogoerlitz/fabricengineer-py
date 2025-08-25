@@ -7,12 +7,14 @@ from fabricengineer.api.fabric.workspace.items.warehouse import (
     WarehouseAPIData,
     WarehouseProperties
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from tests.utils import rand_workspace_item_name
 
 
 @pytest.fixture
 def warehouse_singleton(workspace_id: str):
     """Fixture to create a Warehouse instance."""
+    set_global_fabric_client(get_env_svc())
     name = rand_workspace_item_name("WH")
     warehouse = Warehouse(
         workspace_id=workspace_id,
@@ -195,12 +197,13 @@ class TestWarehouse:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_warehouse(self, workspace_id: str) -> Warehouse:
+    def rand_warehouse(self, workspace_id: str, folder: WorkspaceFolder = None) -> Warehouse:
         name = rand_workspace_item_name("WH")
         return Warehouse(
             workspace_id=workspace_id,
             name=name,
             description="Test Warehouse",
+            folder=folder
         )
 
     def test_init_warehouse(self, workspace_id: str):
@@ -254,6 +257,15 @@ class TestWarehouse:
         assert obj.item.api.properties.creationMode is not None
         assert obj.item.api.properties.collationType is not None
         assert obj.item.api.properties.lastUpdatedTime is not None
+
+    def test_create_in_folder(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
+        obj = self.rand_warehouse(workspace_id, folder=folder_singleton)
+        obj.create()
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "Warehouse"
 
     def test_update(self, warehouse_singleton: Warehouse):
         self.authenticate()

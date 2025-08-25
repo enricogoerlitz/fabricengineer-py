@@ -8,12 +8,14 @@ from fabricengineer.api.fabric.workspace.items.data_pipeline import (
     CopyDataPipelineDefinition,
     ZIPDataPipelineDefinition
 )
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 from tests.utils import rand_workspace_item_name
 
 
 @pytest.fixture
 def data_pipeline_singleton(workspace_id: str) -> DataPipeline:
     """Fixture to create a DataPipeline instance."""
+    set_global_fabric_client(get_env_svc())
     name = rand_workspace_item_name("DP")
     data_pipeline = DataPipeline(
         workspace_id=workspace_id,
@@ -65,12 +67,13 @@ class TestDataPipeline:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_data_pipeline(self, workspace_id: str) -> DataPipeline:
+    def rand_data_pipeline(self, workspace_id: str, folder: WorkspaceFolder = None) -> DataPipeline:
         name = rand_workspace_item_name("DP")
         return DataPipeline(
             workspace_id=workspace_id,
             name=name,
-            description="Test DataPipeline"
+            description="Test DataPipeline",
+            folder=folder
         )
 
     def test_init_data_pipeline(self, workspace_id: str):
@@ -87,7 +90,6 @@ class TestDataPipeline:
             "type": "DataPipeline"
         }
         obj = DataPipeline.from_json(json_data)
-        print("OBJ:", obj)
         assert obj.item.fields.get("displayName") == json_data["displayName"]
         assert obj.item.fields.get("description") == json_data["description"]
         assert obj.item.api.displayName == json_data["displayName"]
@@ -142,6 +144,15 @@ class TestDataPipeline:
         assert obj.item.api.description == obj.item.fields.get("description")
         assert obj.item.api.type == "DataPipeline"
         assert obj.fetch_definition() is not None
+
+    def test_create_in_folder(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
+        obj = self.rand_data_pipeline(workspace_id, folder_singleton)
+        obj.create(max_retry_seconds_at_202=1)
+        assert obj.item.api.id is not None
+        assert obj.item.api.displayName == obj.item.fields.get("displayName")
+        assert obj.item.api.description == obj.item.fields.get("description")
+        assert obj.item.api.type == "DataPipeline"
 
     def test_update(self, data_pipeline_singleton: DataPipeline):
         self.authenticate()

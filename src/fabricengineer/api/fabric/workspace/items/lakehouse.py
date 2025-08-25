@@ -3,8 +3,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, BaseItemAPIData, FabricItem
+from fabricengineer.api.fabric.workspace.base import (
+    BaseWorkspaceItem,
+    BaseItemAPIData,
+    FabricItem,
+    WorkspaceItemDependency
+)
 from fabricengineer.logging.logger import logger
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
 
 ITEM_PATH = "/lakehouses"
@@ -27,6 +33,7 @@ class LakehouseProperties:
 
 @dataclass
 class LakehouseAPIData(BaseItemAPIData):
+    folderId: str = None
     properties: LakehouseProperties = field(default_factory=LakehouseProperties)
 
 
@@ -39,15 +46,21 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
         workspace_id: str,
         name: str,
         description: str = None,
-        folder_id: str = None,
+        folder: WorkspaceFolder = None,
         enable_schemas: bool = True,
         api_data: LakehouseAPIData = None
     ):
+        depends_on = None
+        folder = None if not isinstance(folder, WorkspaceFolder) else folder
+        if folder is not None:
+            depends_on = [
+                WorkspaceItemDependency(folder, "folder", "folderId")
+            ]
         description = description or "New Lakehouse"
         item = FabricItem[LakehouseAPIData](
             displayName=name,
             description=description,
-            folderId=folder_id,
+            folderId=folder,
             creationPayload={
                 "enableSchemas": enable_schemas
             },
@@ -57,7 +70,8 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             create_type_fn=Lakehouse.from_json,
             base_item_url=ITEM_PATH,
             workspace_id=workspace_id,
-            item=item
+            item=item,
+            depends_on=depends_on
         )
 
     @staticmethod

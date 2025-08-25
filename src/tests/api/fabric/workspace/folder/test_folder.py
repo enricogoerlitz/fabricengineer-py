@@ -9,18 +9,6 @@ from fabricengineer.api.fabric.workspace.folder import (
 from tests.utils import rand_workspace_item_name
 
 
-@pytest.fixture
-def folder_singleton(workspace_id: str):
-    """Fixture to create a Folder instance."""
-    name = rand_workspace_item_name("F")
-    folder = WorkspaceFolder(
-        workspace_id=workspace_id,
-        name=name
-    )
-    folder.create()
-    return folder
-
-
 class TestWorkspaceFolderAPIData:
     """Test WorkspaceFolderAPIData dataclass."""
 
@@ -72,11 +60,12 @@ class TestWorkspaceFolder:
     def authenticate(self) -> None:
         set_global_fabric_client(get_env_svc())
 
-    def rand_workspace_folder(self, workspace_id: str) -> WorkspaceFolder:
+    def rand_workspace_folder(self, workspace_id: str, folder: WorkspaceFolder = None) -> WorkspaceFolder:
         name = rand_workspace_item_name("F")
         return WorkspaceFolder(
             workspace_id=workspace_id,
-            name=name
+            name=name,
+            parent_folder=folder
         )
 
     def test_init_workspace_folder(self, workspace_id: str):
@@ -84,12 +73,13 @@ class TestWorkspaceFolder:
         assert workspace_folder.item.fields.get("displayName", "").startswith("F_")
         assert workspace_folder.item.fields.get("parentFolderId") is None
 
-    def test_from_json(self, workspace_id: str):
+    def test_from_json(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+        self.authenticate()
         json_data = {
             "workspaceId": workspace_id,
             "displayName": "WP_Test",
             "id": "12345",
-            "parentFolderId": "<ParentFolderId>"
+            "parentFolderId": folder_singleton
         }
         obj = WorkspaceFolder.from_json(json_data)
         assert obj.item.fields.get("displayName") == json_data["displayName"]
@@ -108,23 +98,21 @@ class TestWorkspaceFolder:
 
     def test_create_with_parent(self, workspace_id: str, folder_singleton: WorkspaceFolder):
         self.authenticate()
-        parent_folder = folder_singleton
-        obj = self.rand_workspace_folder(workspace_id)
-        obj.item.fields["parentFolderId"] = parent_folder.item.api.id
+        obj = self.rand_workspace_folder(workspace_id, folder_singleton)
         obj.create()
         assert obj.item.api.id is not None
         assert obj.item.api.displayName == obj.item.fields.get("displayName")
         assert obj.item.api.workspaceId == workspace_id
-        assert obj.item.api.parentFolderId == parent_folder.item.api.id
+        assert obj.item.api.parentFolderId == folder_singleton.item.api.id
 
-    def test_update(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+    def test_update(self, folder_singleton: WorkspaceFolder):
         self.authenticate()
         new_name = rand_workspace_item_name("F")
         assert folder_singleton.item.api.parentFolderId is None
         folder_singleton.update(displayName=new_name)
         assert folder_singleton.item.api.displayName == new_name
 
-    def test_fetch_and_delete(self, workspace_id: str, folder_singleton: WorkspaceFolder):
+    def test_fetch_and_delete(self, folder_singleton: WorkspaceFolder):
         self.authenticate()
         folder_singleton.fetch()
         folder_singleton.delete()
