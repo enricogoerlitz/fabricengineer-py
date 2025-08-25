@@ -54,7 +54,7 @@ class CopyDataPipelineDefinition(CopyItemDefinition):
 
 
 class ZIPDataPipelineDefinition(ItemDefinitionInterface):
-    def __init__(self, pipeline_json: str = None, zip_path: str = None):
+    def __init__(self, *, pipeline_json: str = None, zip_path: str = None):
         if pipeline_json is None and zip_path is None:
             raise ValueError("Either pipeline_json or zip_path must be provided")
         if isinstance(zip_path, str):
