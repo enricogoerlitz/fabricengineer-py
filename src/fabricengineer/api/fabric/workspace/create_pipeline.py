@@ -17,6 +17,7 @@ class PipelineItemStatus(Enum):
 
 
 class PipelineItem:
+    """Represents an item in the creation pipeline with its status and dependencies."""
     def __init__(
             self,
             item: BaseWorkspaceItem,
@@ -36,12 +37,14 @@ class PipelineItem:
         return self._status
 
     def is_ready(self) -> bool:
+        """Check if all upstream dependencies are created."""
         return all(
             dep.item in self._finished_pipeline_items
             for dep in self._item._upstream_items
         )
 
     def create_if_not_exists(self) -> None:
+        """Create the item if it does not already exist, respecting dependencies."""
         while not self.is_ready():
             time.sleep(1)
 
@@ -99,6 +102,7 @@ class WorkspaceItemCreationPipeline:
         return self._items
 
     def run(self, *, in_parallel: bool = True, max_workers: int = None) -> CreationPipelineResult:
+        """Run the creation pipeline for the workspace items."""
         finished_pipeline_items = set()
         pipeline_items = [
             PipelineItem(item, finished_pipeline_items)
@@ -106,11 +110,12 @@ class WorkspaceItemCreationPipeline:
         ]
 
         if in_parallel:
-            return self.run_in_parallel(pipeline_items, max_workers=max_workers)
+            return self._run_in_parallel(pipeline_items, max_workers=max_workers)
 
-        return self.run_in_sequence(pipeline_items)
+        return self._run_in_sequence(pipeline_items)
 
-    def run_in_sequence(self, pipeline_items: list[PipelineItem]) -> CreationPipelineResult:
+    def _run_in_sequence(self, pipeline_items: list[PipelineItem]) -> CreationPipelineResult:
+        """Run the creation pipeline in sequence."""
         run_items = pipeline_items.copy()
         while len(run_items) > 0:
             for item in run_items:
@@ -120,11 +125,12 @@ class WorkspaceItemCreationPipeline:
                 run_items.remove(item)
         return CreationPipelineResult(pipeline_items)
 
-    def run_in_parallel(
+    def _run_in_parallel(
             self,
             pipeline_items: list[PipelineItem],
             max_workers: int = None
     ) -> CreationPipelineResult:
+        """Run the creation pipeline in parallel using a thread pool."""
         cpu = os.cpu_count() or 4
         max_workers = max_workers or min(32, cpu * 5)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -132,9 +138,11 @@ class WorkspaceItemCreationPipeline:
         return CreationPipelineResult(pipeline_items)
 
     def _execute_pipeline_item(self, pipeline_item: PipelineItem):
+        """Execute the creation of a single pipeline item."""
         pipeline_item.create_if_not_exists()
 
     def _prepare_items(self) -> None:
+        """Prepare the items by resolving and adding any missing dependencies."""
         depends_on_items = []
         for item in self._items:
             depends_on_items.extend([it.item for it in item.upstream_items])

@@ -1,253 +1,309 @@
 """
-Test module for FabricAPIWorkspaceClient.
+End-to-end and unit-style tests for FabricAPIClient utilities and HTTP operations.
 
-Run tests with:
-uv run pytest src/tests/api/fabric/client/test_workspace_client.py -v
+How to run locally:
+- Ensure authentication is configured (fixtures like `msf_svc`, `fabric_client`, and `workspace_id`
+  must provide valid credentials and a reachable Fabric environment).
+- Then run:
+    uv run pytest src/tests/api/fabric/client -v
+
+Notes:
+- These tests assert header composition, URL construction, token retrieval behavior,
+  and CRUD operations against Fabric workspaces (folders lifecycle).
+- Live tests require a valid Fabric workspace and permissions.
 """
-import uuid
 
-from fabricengineer.api.fabric.client.fabric import FabricAPIClient
-from fabricengineer.api.fabric.client.workspace import FabricAPIWorkspaceClient
+import uuid
+import pytest
+
+from fabricengineer.api.fabric.client.fabric import FabricAPIClient, get_env_svc, set_global_fabric_client
 from fabricengineer.api.auth import MicrosoftExtraSVC
 
+# Centralize API version and base URL used in assertions to keep tests DRY.
+API_VERSION = "v1"
+BASE_URL = f"https://api.fabric.microsoft.com/{API_VERSION}"
 
-class TestFabricAPIWorkspaceClient:
 
-    def test_initialize_workspace_client(self, fabric_client: FabricAPIClient):
-        """Test that workspace client is properly initialized."""
-        workspace_client = fabric_client.workspaces
+class TestUtilsFunctions:
+    """Tests for utility helpers that prepare services for the client."""
 
-        assert isinstance(workspace_client, FabricAPIWorkspaceClient)
-        assert workspace_client._client == fabric_client
-        assert workspace_client._base_url == f"{fabric_client.base_url}/workspaces"
+    def test_get_env_svc(self):
+        """Build MicrosoftExtraSVC from env and sanity-check required fields."""
+        # Act
+        msf_svc = get_env_svc()
 
-    def test_workspace_client_from_fabric_client(self, msf_svc: MicrosoftExtraSVC):
-        """Test workspace client initialization through fabric client."""
-        fabric_client = FabricAPIClient(msf_svc=msf_svc, api_version="v1")
-        workspace_client = fabric_client.workspaces
+        # Assert
+        assert msf_svc is not None
+        assert isinstance(msf_svc, MicrosoftExtraSVC)
 
-        assert isinstance(workspace_client, FabricAPIWorkspaceClient)
-        assert workspace_client._client == fabric_client
-        assert workspace_client._base_url == "https://api.fabric.microsoft.com/v1/workspaces"
+        # Light sanity checks on expected lengths for UUID/secret-like values
+        assert len(msf_svc.tenant_id) == 36
+        assert len(msf_svc.client_id) == 36
+        assert len(msf_svc.client_secret) == 40
 
-    def test_workspace_url_method_without_workspace_id(self, ):
-        """Test the _url method when workspace_id is None."""
-        fabric_client = FabricAPIClient(api_version="v1")
-        workspace_client = fabric_client.workspaces
 
-        # Test with no parameters
-        assert workspace_client._url() == "https://api.fabric.microsoft.com/v1/workspaces"
+class TestFabricAPIClient:
+    """Initialization, header/auth checks, URL building, token retrieval, and CRUD happy-paths."""
 
-        # Test with item_path only
-        assert workspace_client._url(item_path="/items") == "https://api.fabric.microsoft.com/v1/workspaces/items"
-        assert workspace_client._url(item_path="items") == "https://api.fabric.microsoft.com/v1/workspaces/items"
+    def test_initialize_fabric_client(self, msf_svc: MicrosoftExtraSVC):
+        """Initialize with explicit MicrosoftExtraSVC and verify base fields and sub-client availability."""
+        # Arrange & Act
+        client = FabricAPIClient(msf_svc=msf_svc, api_version=API_VERSION)
 
-        # Test with empty item_path
-        assert workspace_client._url(item_path="") == "https://api.fabric.microsoft.com/v1/workspaces"
+        # Assert
+        assert client.base_url == BASE_URL
+        assert client.headers is not None
+        assert "Authorization" in client.headers
+        assert "Content-Type" in client.headers
+        # Token should be non-empty beyond the Bearer prefix
+        assert len(client.headers.get("Authorization", "")) > len("Bearer TOKEN")
+        assert client.headers["Content-Type"] == "application/json"
+        # Sub-client initialization
+        assert client.workspaces is not None
 
-    def test_workspace_url_method_with_workspace_id(self, ):
-        """Test the _url method when workspace_id is provided."""
-        fabric_client = FabricAPIClient(api_version="v1")
-        workspace_client = fabric_client.workspaces
+    def test_initialize_fabric_client_svc_from_env(self):
+        """Initialize using env-provided service and verify headers and sub-client."""
+        # Arrange & Act
+        client = FabricAPIClient(api_version=API_VERSION)
 
-        workspace_id = "12345678-1234-1234-1234-123456789012"
+        # Assert
+        assert client.base_url == BASE_URL
+        assert client.headers is not None
+        assert "Authorization" in client.headers
+        assert "Content-Type" in client.headers
+        assert len(client.headers.get("Authorization", "")) > len("Bearer TOKEN")
+        assert client.headers["Content-Type"] == "application/json"
+        assert client.workspaces is not None
 
-        # Test with workspace_id only
-        assert workspace_client._url(workspace_id=workspace_id) == f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}"
+    def test_check_headers_auth(self):
+        """Passes with valid token; raises PermissionError on missing/empty Authorization header."""
+        # Arrange
+        client = FabricAPIClient(api_version=API_VERSION)
 
-        # Test with workspace_id and item_path
-        assert workspace_client._url(workspace_id=workspace_id, item_path="/items") == f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items"
-        assert workspace_client._url(workspace_id=workspace_id, item_path="items") == f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items"
+        # Act / Assert: no exception with valid headers
+        client.check_headers_auth()
 
-        # Test with workspace_id and various item paths
-        assert workspace_client._url(workspace_id=workspace_id, item_path="/folders") == f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/folders"
-        assert workspace_client._url(workspace_id=workspace_id, item_path="/items/123/definition") == f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items/123/definition"
-
-    def test_workspace_get_all_workspaces(self, fabric_client: FabricAPIClient):
-        """Test getting all workspaces."""
-        workspace_client = fabric_client.workspaces
-
-        response = workspace_client.get()
-
-        assert response is not None
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "value" in data
-        assert isinstance(data["value"], list)
-
-    def test_workspace_get_specific_workspace(self, fabric_client: FabricAPIClient, workspace_id):
-        """Test getting a specific workspace."""
-        workspace_client = fabric_client.workspaces
-
-        response = workspace_client.get(workspace_id=workspace_id)
-
-        assert response is not None
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert data.get("id") == workspace_id
-
-    def test_workspace_get_workspace_items(self, fabric_client: FabricAPIClient, workspace_id):
-        """Test getting items from a workspace."""
-        workspace_client = fabric_client.workspaces
-
-        response = workspace_client.get(workspace_id=workspace_id, item_path="/items")
-
-        assert response is not None
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "value" in data
-        assert isinstance(data["value"], list)
-
-    def test_workspace_post_create_folder(self, fabric_client: FabricAPIClient, workspace_id):
-        """Test creating a folder in a workspace."""
-        workspace_client = fabric_client.workspaces
-
-        folder_name = f"WS_Test_Folder_{uuid.uuid4().hex[:8]}"
-        payload = {
-            "displayName": folder_name
+        # Mutate headers to simulate an empty token and assert proper failure
+        client._headers = {
+            "Authorization": "Bearer ",
+            "Content-Type": "application/json",
         }
+        # Expect the client to reject missing token
+        with pytest.raises(PermissionError, match="Authorization header is missing."):
+            client.check_headers_auth()
 
-        response = workspace_client.post(
-            workspace_id=workspace_id,
-            item_path="/folders",
-            payload=payload
-        )
+    def test_global_fabric_import(self):
+        """Lazily-imported global client has correct base URL, headers, and sub-client."""
+        # Act
+        from fabricengineer.api.fabric.client.fabric import fabric_client
 
+        # Assert
+        assert fabric_client().base_url == BASE_URL
+        assert fabric_client().headers is not None
+        assert "Authorization" in fabric_client().headers
+        assert "Content-Type" in fabric_client().headers
+        assert len(fabric_client().headers.get("Authorization", "")) > len("Bearer TOKEN")
+        assert fabric_client().headers["Content-Type"] == "application/json"
+        assert fabric_client().workspaces is not None
+
+    def test_set_global_fabric_client(self, msf_svc: MicrosoftExtraSVC):
+        """set_global_fabric_client replaces the globally referenced client instance."""
+        from fabricengineer.api.fabric.client.fabric import fabric_client
+
+        # Arrange: capture current instance identity
+        assert fabric_client().headers is not None
+        client_hash_before = fabric_client().__hash__()
+
+        # Act: set a new global client using provided service
+        set_global_fabric_client(msf_svc=msf_svc)
+
+        # Assert: the referenced instance changed
+        client_hash_after = fabric_client().__hash__()
+        assert client_hash_before != client_hash_after
+
+    def test_refresh_headers(self):
+        """refresh_headers issues a new Authorization token; Content-Type remains JSON."""
+        # Arrange
+        client = FabricAPIClient(api_version=API_VERSION)
+        headers_before = client.headers.copy()
+
+        assert headers_before is not None
+        assert len(headers_before.get("Authorization", "")) > len("Bearer TOKEN")
+        assert headers_before.get("Content-Type", "") == "application/json"
+
+        # Act
+        client.refresh_headers()
+        headers_after = client.headers.copy()
+
+        # Assert
+        assert headers_after != headers_before
+        assert headers_after is not None
+        assert len(headers_after.get("Authorization", "")) > len("Bearer TOKEN")
+        assert headers_after.get("Content-Type", "") == "application/json"
+
+    @pytest.mark.parametrize(
+        "path, expected",
+        [
+            ("/workspaces", "/workspaces"),
+            ("/workspaces/123/items", "/workspaces/123/items"),
+            ("workspaces", "/workspaces"),
+            ("workspaces/123/items", "/workspaces/123/items"),
+            ("", ""),
+            (None, ""),
+        ],
+    )
+    def test_prep_path(self, path, expected):
+        """Normalize relative/absolute paths to a consistent API path shape used by the client."""
+        # Arrange
+        client = FabricAPIClient(api_version=API_VERSION)
+
+        # Act / Assert
+        assert client._prep_path(path) == expected
+
+    @pytest.mark.parametrize(
+        "path, expected",
+        [
+            ("/workspaces", f"{BASE_URL}/workspaces"),
+            ("/workspaces/123/items", f"{BASE_URL}/workspaces/123/items"),
+            ("workspaces", f"{BASE_URL}/workspaces"),
+            ("workspaces/123/items", f"{BASE_URL}/workspaces/123/items"),
+            ("", f"{BASE_URL}"),
+            (None, f"{BASE_URL}"),
+        ],
+    )
+    def test_url(self, path, expected):
+        """Construct absolute URLs by combining base_url and normalized path segments."""
+        # Arrange
+        client = FabricAPIClient(api_version=API_VERSION)
+
+        # Act / Assert
+        assert client._url(path) == expected
+
+    def test_get_token_with_msf_svc(self, msf_svc: MicrosoftExtraSVC):
+        """Retrieve a JWT with a provided MicrosoftExtraSVC; minimally validate shape."""
+        # Arrange
+        client = FabricAPIClient(msf_svc=msf_svc, api_version=API_VERSION)
+
+        # Act
+        token = client._get_token()
+
+        # Assert
+        assert token is not None
+        assert isinstance(token, str)
+        assert len(token) > 0
+        # Basic JWT structure contains dot separators
+        assert "." in token
+
+    def test_get_token_without_msf_svc_and_no_notebookutils(self):
+        """Return empty token when no auth service is available and notebook utils are absent."""
+        # Arrange: explicitly clear auth service
+        client = FabricAPIClient(api_version=API_VERSION)
+        client._msf_svc = None
+
+        # Act
+        token = client._get_token()
+
+        # Assert
+        assert client._msf_svc is None
+        assert token == ""
+
+    def test_get(self, fabric_client: FabricAPIClient, workspace_id):
+        """GET a specific workspace; expect 200 and a JSON object payload."""
+        # Act
+        response = fabric_client.get(f"/workspaces/{workspace_id}")
+
+        # Assert
+        assert response is not None
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+
+    def test_get_list(self, fabric_client: FabricAPIClient):
+        """GET all workspaces; expect 200, object payload with 'value' list."""
+        # Act
+        response = fabric_client.get("/workspaces")
+
+        # Assert
+        assert response is not None
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "value" in data
+        assert isinstance(data["value"], list)
+
+    def test_post_folders(self, fabric_client: FabricAPIClient, workspace_id):
+        """POST a folder into a workspace and then delete it as cleanup."""
+        # Arrange
+        name = f"F_{uuid.uuid4().hex[:8]}"
+        url = f"/workspaces/{workspace_id}/folders"
+        payload = {"displayName": name}
+
+        # Act: create
+        response = fabric_client.post(url, payload=payload)
+
+        # Assert: created
         assert response is not None
         assert response.status_code == 201
         data = response.json()
         assert isinstance(data, dict)
-        assert data.get("displayName") == folder_name
 
-        # Cleanup - delete the created folder
+        # Cleanup: delete created folder
         folder_id = data.get("id")
-        delete_response = workspace_client.delete(
-            workspace_id=workspace_id,
-            item_path=f"/folders/{folder_id}"
-        )
-        assert delete_response.status_code == 200
-
-    def test_workspace_patch_update_folder(self, fabric_client: FabricAPIClient, workspace_id):
-        """Test updating a folder in a workspace."""
-        workspace_client = fabric_client.workspaces
-
-        # First create a folder
-        folder_name = f"WS_Test_Folder_{uuid.uuid4().hex[:8]}"
-        create_payload = {
-            "displayName": folder_name
-        }
-
-        create_response = workspace_client.post(
-            workspace_id=workspace_id,
-            item_path="/folders",
-            payload=create_payload
-        )
-
-        assert create_response.status_code == 201
-        folder_data = create_response.json()
-        folder_id = folder_data.get("id")
-
-        # Now update the folder
-        new_folder_name = f"WS_Updated_Folder_{uuid.uuid4().hex[:8]}"
-        update_payload = {
-            "displayName": new_folder_name
-        }
-
-        patch_response = workspace_client.patch(
-            workspace_id=workspace_id,
-            item_path=f"/folders/{folder_id}",
-            payload=update_payload
-        )
-
-        assert patch_response is not None
-        assert patch_response.status_code == 200
-        updated_data = patch_response.json()
-        assert isinstance(updated_data, dict)
-        assert updated_data.get("displayName") == new_folder_name
-
-        # Cleanup - delete the folder
-        delete_response = workspace_client.delete(
-            workspace_id=workspace_id,
-            item_path=f"/folders/{folder_id}"
-        )
-        assert delete_response.status_code == 200
-
-    def test_workspace_delete_folder(self, fabric_client: FabricAPIClient, workspace_id):
-        """Test deleting a folder from a workspace."""
-        workspace_client = fabric_client.workspaces
-
-        # First create a folder to delete
-        folder_name = f"WS_Delete_Test_{uuid.uuid4().hex[:8]}"
-        create_payload = {
-            "displayName": folder_name
-        }
-
-        create_response = workspace_client.post(
-            workspace_id=workspace_id,
-            item_path="/folders",
-            payload=create_payload
-        )
-
-        assert create_response.status_code == 201
-        folder_data = create_response.json()
-        folder_id = folder_data.get("id")
-
-        # Now delete the folder
-        delete_response = workspace_client.delete(
-            workspace_id=workspace_id,
-            item_path=f"/folders/{folder_id}"
-        )
+        delete_url = f"{url}/{folder_id}"
+        delete_response = fabric_client.delete(delete_url)
 
         assert delete_response is not None
         assert delete_response.status_code == 200
 
-        # Verify the folder is actually deleted by trying to get it
-        get_response = workspace_client.get(
-            workspace_id=workspace_id,
-            item_path=f"/folders/{folder_id}"
-        )
-        assert get_response.status_code == 404  # Should not be found
+    def test_patch_folder(self, fabric_client: FabricAPIClient, workspace_id):
+        """PATCH a folder's displayName; verify update and clean up created resource."""
+        # Arrange: create a folder to update
+        name = f"F_{uuid.uuid4().hex[:8]}"
+        url = f"/workspaces/{workspace_id}/folders"
+        payload = {"displayName": name}
+        response = fabric_client.post(url, payload=payload)
 
-    def test_workspace_error_handling_invalid_workspace_id(self, fabric_client: FabricAPIClient):
-        """Test error handling with invalid workspace ID."""
-        workspace_client = fabric_client.workspaces
+        assert response.status_code == 201
+        data = response.json()
+        folder_id = data.get("id")
 
-        invalid_workspace_id = "invalid-workspace-id"
+        # Act: patch/update the folder
+        new_name = f"F_UPDATED_{uuid.uuid4().hex[:8]}"
+        patch_url = f"{url}/{folder_id}"
+        patch_payload = {"displayName": new_name}
+        patch_response = fabric_client.patch(patch_url, payload=patch_payload)
 
-        response = workspace_client.get(workspace_id=invalid_workspace_id)
+        # Assert
+        assert patch_response is not None
+        assert patch_response.status_code == 200
+        patch_data = patch_response.json()
+        assert isinstance(patch_data, dict)
+        assert patch_data.get("displayName") == new_name
 
-        assert response is not None
-        assert response.status_code in [400, 404]  # Bad Request or Not Found
+        # Cleanup
+        delete_response = fabric_client.delete(patch_url)
+        assert delete_response.status_code == 200
 
-    def test_workspace_error_handling_unauthorized_workspace(self, fabric_client: FabricAPIClient):
-        """Test error handling when accessing unauthorized workspace."""
-        workspace_client = fabric_client.workspaces
+    def test_delete_folder(self, fabric_client: FabricAPIClient, workspace_id):
+        """DELETE a folder and verify subsequent GET returns 404 (not found)."""
+        # Arrange: create a folder to delete
+        name = f"F_{uuid.uuid4().hex[:8]}"
+        url = f"/workspaces/{workspace_id}/folders"
+        payload = {"displayName": name}
+        response = fabric_client.post(url, payload=payload)
 
-        # Use a valid UUID format but non-existent workspace
-        non_existent_workspace = "00000000-0000-0000-0000-000000000000"
+        assert response.status_code == 201
+        data = response.json()
+        folder_id = data.get("id")
 
-        response = workspace_client.get(workspace_id=non_existent_workspace)
+        # Act: delete the folder
+        delete_url = f"{url}/{folder_id}"
+        delete_response = fabric_client.delete(delete_url)
 
-        assert response is not None
-        assert response.status_code in [403, 404]  # Forbidden or Not Found
+        # Assert: deletion succeeded
+        assert delete_response is not None
+        assert delete_response.status_code == 200
 
-    def test_workspace_headers_consistency(self, fabric_client: FabricAPIClient):
-        """Test that workspace client uses the same headers as fabric client."""
-        workspace_client = fabric_client.workspaces
-
-        # Both should reference the same headers object
-        assert workspace_client._client.headers is fabric_client.headers
-        assert "Authorization" in workspace_client._client.headers
-        assert "Content-Type" in workspace_client._client.headers
-        assert workspace_client._client.headers["Content-Type"] == "application/json"
-
-    def test_workspace_base_url_consistency(self, fabric_client: FabricAPIClient):
-        """Test that workspace client base URL is consistent with fabric client."""
-        workspace_client = fabric_client.workspaces
-
-        expected_base_url = f"{fabric_client.base_url}/workspaces"
-        assert workspace_client._base_url == expected_base_url
-        assert workspace_client._base_url == "https://api.fabric.microsoft.com/v1/workspaces"
+        # And the resource should no longer be retrievable
+        get_response = fabric_client.get(delete_url)
+        assert get_response.status_code == 404

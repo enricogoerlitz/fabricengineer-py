@@ -7,7 +7,6 @@ import os
 from fabricengineer.api.auth import MicrosoftExtraSVC
 
 
-# def test_create_microsoft_extra_svc(msf_svc: MicrosoftExtraSVC):
 def test_create_microsoft_extra_svc():
     svc = MicrosoftExtraSVC(
         tenant_id=os.getenv("MICROSOFT_TENANT_ID"),

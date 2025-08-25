@@ -8,6 +8,7 @@ from fabricengineer.logging.logger import logger
 
 
 def check_http_response(resp: requests.Response):
+    """Raises an error if the response status code indicates a failure."""
     if resp.status_code <= 299:
         return
     err = f"Status code: {resp.status_code}, Response: {resp.text}"
@@ -33,11 +34,13 @@ def base64_encode(obj: dict | str | bytes | bytearray) -> str:
 
 
 def base64_decode(obj_str: str):
+    """Decodiert einen Base64-codierten ASCII-String zu einem UTF-8 String."""
     decoded = base64.b64decode(obj_str).decode("utf-8")
     return decoded
 
 
-def _retry_after(resp: requests.Response, retry_max_seconds: int = 5) -> int:
+def retry_after(resp: requests.Response, retry_max_seconds: int = 5) -> int:
+    """Get the retry-after duration from the response headers, capped at retry_max_seconds."""
     return min(int(resp.headers.get("Retry-After", retry_max_seconds)), retry_max_seconds)
 
 
@@ -47,9 +50,10 @@ def http_wait_for_completion_after_202(
         retry_max_seconds: int = 5,
         timeout: int = 90
 ) -> requests.Response:
+    """Waits for the completion of an asynchronous HTTP operation that returns a 202 status code."""
     op_id = resp.headers["x-ms-operation-id"]
     op_location = resp.headers["Location"]
-    retry = _retry_after(resp, retry_max_seconds)
+    retry = retry_after(resp, retry_max_seconds)
     logger.info(f"Status=202, Operation ID={op_id}, Location={op_location}, Retry after={retry}s, payload={payload}")
 
     retry_sum = 0
@@ -64,7 +68,7 @@ def http_wait_for_completion_after_202(
             obj = res.json()
             break
 
-        retry = _retry_after(resp_retry)
+        retry = retry_after(resp_retry)
         retry_sum += retry
         if retry_sum > timeout:
             logger.warning(f"Timeout after {timeout}s")

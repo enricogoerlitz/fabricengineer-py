@@ -43,6 +43,7 @@ class CopyItemDefinition(ItemDefinitionInterface):
         self._item_uri_name = item_uri_name
 
     def get_definition(self) -> dict:
+        """Get the item definition by fetching it from the API."""
         url = f"/workspaces/{self._wid}/{self._item_uri_name}/{self._id}/getDefinition"
         try:
             resp = fabric_client().post(url, payload={})
@@ -64,8 +65,7 @@ class WorkspaceItemDependency:
 
 
 class BaseWorkspaceItem(Generic[TItemAPIData]):
-    _upstream_items: list[WorkspaceItemDependency] = []
-    _downstream_items: list["BaseWorkspaceItem"] = []
+    """Base class for all workspace items."""
 
     def __init__(
             self,
@@ -103,6 +103,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             id: str,
             log_err: bool = True
     ) -> Any:
+        """Get a workspace item by its ID."""
         item_path = f"{base_item_url}/{id}"
         try:
             resp = fabric_client().workspaces.get(workspace_id, item_path)
@@ -122,6 +123,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             name: str,
             log_err: bool = True
     ) -> Any:
+        """Get a workspace item by its name."""
         item_path = base_item_url
         try:
             resp = fabric_client().workspaces.get(workspace_id, item_path)
@@ -137,6 +139,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
 
     @staticmethod
     def list(workspace_id: str, base_item_url: str) -> Iterator[dict]:
+        """List all items in a workspace."""
         item_path = base_item_url
         try:
             resp = fabric_client().workspaces.get(workspace_id, item_path)
@@ -148,6 +151,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             raise e
 
     def fetch(self, log_err: bool = True) -> "BaseWorkspaceItem":
+        """Fetch the latest item data from the API and update the internal state."""
         if self._item.api is None:
             if self._item.fields.get("displayName") is None:
                 raise ValueError("Item displayName is required to fetch item by name.")
@@ -170,6 +174,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         return self
 
     def fetch_definition(self) -> dict:
+        """Fetch the item definition from the API."""
         try:
             if self._item.api is None:
                 self.fetch()
@@ -186,6 +191,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             raise e
 
     def exists(self) -> bool:
+        """Check if the item exists in the workspace by attempting to fetch it."""
         try:
             return self.fetch(log_err=False)._item.api is not None
         except requests.HTTPError as e:
@@ -203,6 +209,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             max_retry_seconds_at_202: int = 5,
             timeout: int = 90
     ) -> None:
+        """Create the item in the workspace."""
         item_path = self._base_item_url
         payload = self._get_create_payload()
         try:
@@ -236,6 +243,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             max_retry_seconds_at_202: int = 5,
             timeout: int = 90
     ) -> None:
+        """Create the item if it does not already exist in the workspace."""
         if self.exists():
             logger.info(f"Item already exists, skipping creation. {self}")
             return
@@ -246,6 +254,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         )
 
     def update(self, **fields) -> None:
+        """Update the item in the workspace with the provided fields."""
         try:
             if self._item.api is None:
                 self.fetch()
@@ -267,6 +276,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             raise e
 
     def delete(self) -> None:
+        """Delete the item from the workspace."""
         try:
             if self._item.api is None:
                 self.fetch()
@@ -282,6 +292,7 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             raise e
 
     def _get_create_payload(self) -> dict:
+        """Get the payload for creating the item, resolving any dependencies."""
         for dependency in self._upstream_items:
             if dependency.item.item.api is None:
                 raise ValueError(f"Dependency '{dependency.field}' is not created yet.")
@@ -290,19 +301,18 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
         return self._item.fields
 
     def _register_downstream_item(self, dependency: "BaseWorkspaceItem") -> None:
+        """Register a downstream item that depends on this item."""
         if not isinstance(dependency, BaseWorkspaceItem):
             raise ValueError("Dependency must be an instance of BaseWorkspaceItem.")
         self._downstream_items.append(dependency)
 
     def _register_at_upstream_items(self, dependencies: List[WorkspaceItemDependency]) -> None:
+        """Register this item as a downstream item at its upstream dependencies."""
         if dependencies is None:
             return
         dependency: WorkspaceItemDependency
         for dependency in dependencies:
             dependency.item._register_downstream_item(self)
-
-    def _retry_after(self, resp: requests.Response) -> int:
-        return min(int(resp.headers.get("Retry-After", 5)), 5)
 
     def __str__(self) -> str:
         item_str = str(self._item)
