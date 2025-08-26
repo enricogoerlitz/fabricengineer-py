@@ -7,7 +7,8 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseItemAPIData,
     FabricItem,
     ItemDefinitionInterface,
-    WorkspaceItemDependency
+    WorkspaceItemDependency,
+    WorkspaceItemDependencyType
 )
 from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
@@ -31,7 +32,7 @@ class VariableLibraryVariable:
     name: str
     note: str
     type: str
-    value: Any
+    value: Any | WorkspaceItemDependency
 
 
 class VariableLibraryDefinition(ItemDefinitionInterface):
@@ -41,7 +42,7 @@ class VariableLibraryDefinition(ItemDefinitionInterface):
             *variables: list[VariableLibraryVariable]
     ) -> None:
         self._value_sets = value_sets_ordered
-        self._variables = variables or []
+        self._variables: list[VariableLibraryVariable] = variables or []
 
     def get_definition(self) -> dict:
         variables = self._serialize_variables()
@@ -133,15 +134,16 @@ class VariableLibrary(BaseWorkspaceItem[VariableLibraryAPIData]):
         name: str,
         description: str = None,
         folder: WorkspaceFolder = None,
-        definition: ItemDefinitionInterface = None,
+        definition: VariableLibraryDefinition = None,
         api_data: VariableLibraryAPIData = None
     ):
         depends_on = None
         folder = None if not isinstance(folder, WorkspaceFolder) else folder
         if folder is not None:
             depends_on = [
-                WorkspaceItemDependency(folder, "folder", "folderId")
+                WorkspaceItemDependency(folder, WorkspaceItemDependencyType.FOLDER, "folderId")
             ]
+        self._init_definition = definition
         definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New VariableLibrary"
         item = FabricItem[VariableLibraryAPIData](

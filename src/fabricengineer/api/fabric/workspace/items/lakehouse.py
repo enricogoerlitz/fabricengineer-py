@@ -7,7 +7,8 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,
-    WorkspaceItemDependency
+    WorkspaceItemDependency,
+    WorkspaceItemDependencyType
 )
 from fabricengineer.logging.logger import logger
 from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
@@ -54,7 +55,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
         folder = None if not isinstance(folder, WorkspaceFolder) else folder
         if folder is not None:
             depends_on = [
-                WorkspaceItemDependency(folder, "folder", "folderId")
+                WorkspaceItemDependency(folder, WorkspaceItemDependencyType.FOLDER, "folderId")
             ]
         description = description or "New Lakehouse"
         item = FabricItem[LakehouseAPIData](

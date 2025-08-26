@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
-from fabricengineer.api.fabric.workspace.base import BaseWorkspaceItem, FabricItem, WorkspaceItemDependency
+from fabricengineer.api.fabric.workspace.base import (
+    BaseWorkspaceItem,
+    FabricItem,
+    WorkspaceItemDependency,
+    WorkspaceItemDependencyType
+)
 
 
 @dataclass
@@ -29,7 +34,7 @@ class WorkspaceFolder(BaseWorkspaceItem[WorkspaceFolderAPIData]):
         parent_folder = None if not isinstance(parent_folder, WorkspaceFolder) else parent_folder
         if parent_folder is not None:
             depends_on = [
-                WorkspaceItemDependency(parent_folder, "folder", "parentFolderId")
+                WorkspaceItemDependency(parent_folder, WorkspaceItemDependencyType.FOLDER, "parentFolderId")
             ]
         item = FabricItem[WorkspaceFolderAPIData](
             displayName=name,

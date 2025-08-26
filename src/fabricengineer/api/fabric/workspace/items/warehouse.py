@@ -5,7 +5,8 @@ from fabricengineer.api.fabric.workspace.base import (
     BaseWorkspaceItem,
     BaseItemAPIData,
     FabricItem,
-    WorkspaceItemDependency
+    WorkspaceItemDependency,
+    WorkspaceItemDependencyType
 )
 from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
 
@@ -47,7 +48,7 @@ class Warehouse(BaseWorkspaceItem[WarehouseAPIData]):
         folder = None if not isinstance(folder, WorkspaceFolder) else folder
         if folder is not None:
             depends_on = [
-                WorkspaceItemDependency(folder, "folder", "folderId")
+                WorkspaceItemDependency(folder, WorkspaceItemDependencyType.FOLDER, "folderId")
             ]
         description = description or "New Warehouse"
         item = FabricItem[WarehouseAPIData](

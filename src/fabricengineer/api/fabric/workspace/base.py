@@ -1,8 +1,9 @@
+import enum
 import requests
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Generic, List, TypeVar, Any, Iterator, Callable, Literal
+from typing import Optional, Generic, List, TypeVar, Any, Iterator, Callable
 
 from fabricengineer.api.fabric.client.fabric import fabric_client
 from fabricengineer.api.utils import check_http_response, http_wait_for_completion_after_202
@@ -57,10 +58,19 @@ class CopyItemDefinition(ItemDefinitionInterface):
             raise e
 
 
+class WorkspaceItemDependencyType(enum.Enum):
+    FOLDER = "Folder"
+    WAREHOUSE = "Warehouse"
+    LAKEHOUSE = "Lakehouse"
+    NOTEBOOK = "Notebook"
+    DATA_PIPELINE = "DataPipeline"
+    VARIABLE_LIBRARY_VALUE = "VariableLibraryValue"
+
+
 @dataclass
 class WorkspaceItemDependency:
     item: "BaseWorkspaceItem"
-    dependency_type: Literal["folder"]
+    type: WorkspaceItemDependencyType
     field: str
 
 
@@ -297,7 +307,6 @@ class BaseWorkspaceItem(Generic[TItemAPIData]):
             if dependency.item.item.api is None:
                 raise ValueError(f"Dependency '{dependency.field}' is not created yet.")
             self._item.fields[dependency.field] = dependency.item.item.api.id
-        print("Create payload:", self._item.fields)
         return self._item.fields
 
     def _register_downstream_item(self, dependency: "BaseWorkspaceItem") -> None:

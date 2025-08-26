@@ -9,7 +9,8 @@ from fabricengineer.api.fabric.workspace.base import (
     FabricItem,
     ItemDefinitionInterface,
     CopyItemDefinition,
-    WorkspaceItemDependency
+    WorkspaceItemDependency,
+    WorkspaceItemDependencyType
 )
 from fabricengineer.api.utils import base64_encode
 from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
@@ -109,7 +110,7 @@ class DataPipeline(BaseWorkspaceItem[DataPipelineAPIData]):
         folder = None if not isinstance(folder, WorkspaceFolder) else folder
         if folder is not None:
             depends_on = [
-                WorkspaceItemDependency(folder, "folder", "folderId")
+                WorkspaceItemDependency(folder, WorkspaceItemDependencyType.FOLDER, "folderId")
             ]
         definition = definition.get_definition() if isinstance(definition, ItemDefinitionInterface) else None
         description = description or "New Data Pipeline"
