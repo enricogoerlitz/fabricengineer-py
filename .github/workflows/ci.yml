@@ -2,11 +2,20 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - feature/merge
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - "src/tests/api/"
+          - "src/tests/logging/ src/tests/tests/ src/tests/transform/"
 
     steps:
       - name: Checkout code
@@ -25,20 +34,10 @@ jobs:
       - name: Install dependencies via uv
         run: uv sync
 
-      # - name: Start Docker Compose
-      #   run: docker compose -f docker/local/docker-compose.yml up -d
-
-      # - name: Wait for Redis to be ready
-      #   timeout-minutes: 1
-      #   run: |
-      #     until docker exec fabricengineer-redis redis-cli ping | grep -q PONG; do
-      #       echo "Waiting for Redis..."
-      #       sleep 1
-      #     done
-
-      - name: Run tests
-        run: uv run pytest -v
-
-      # - name: Shut down Docker Compose
-      #   if: always()
-      #   run: docker compose -f docker/local/docker-compose.yml down
+      - name: Run tests (${{ matrix.shard }})
+        run: uv run pytest ${{ matrix.shard }} -v
+        env:
+          WORKSPACE_ID: ${{ secrets.WORKSPACE_ID }}
+          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
+          SVC_MICROSOFT_FABRIC_CLIENT_ID: ${{ secrets.SVC_MICROSOFT_FABRIC_CLIENT_ID }}
+          SVC_MICROSOFT_FABRIC_SECRET_VALUE: ${{ secrets.SVC_MICROSOFT_FABRIC_SECRET_VALUE }}

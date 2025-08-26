@@ -4,7 +4,7 @@
 
 ## Description
 
-**FabricEngineer** is a comprehensive Python package designed specifically for Microsoft Fabric developers to streamline data transformation workflows and automate complex ETL processes. This package provides enterprise-grade solutions for building robust data pipelines with minimal boilerplate code.
+**FabricEngineer** is a comprehensive Python package designed specifically for Microsoft Fabric developers to streamline data transformation workflows and automate complex ETL processes. This package provides enterprise-grade solutions for building robust data pipelines with minimal boilerplate code. In addition, FabricEngineer enables environment-as-code for Microsoft Fabric: create and manage Lakehouses, Warehouses, Variable Libraries, Notebooks, and Data Pipelines programmatically via the Fabric API. Using a template notebook, you can define standardized workspaces and deploy them either directly in Fabric or through your CI/CD pipeline.
 
 ### Key Features
 
@@ -19,11 +19,17 @@
 - **Schema-aware Operations**: Intelligent handling of schema changes and column evolution
 - **Lakehouse Integration**: Seamless integration with Microsoft Fabric Lakehouse architecture
 
+🏗️ **Environment-as-Code for Microsoft Fabric**
+- **Programmatic Provisioning**: Create Lakehouses, Warehouses, Variable Libraries, Notebooks, and Data Pipelines via the Fabric API
+- **Workspace Templating**: Define standard workspaces with a parameterized template notebook
+- **Flexible Deployment**: Deploy directly in Microsoft Fabric or via CI/CD (e.g., GitHub Actions or Azure DevOps)
+- **Repeatable Setups**: Consistent, code-driven environments with minimal boilerplate
+
 🔧 **Advanced Data Engineering Features**
 - **Configurable Transformations**: Flexible transformation pipelines with custom business logic
 - **Data Quality Controls**: Built-in validation and data quality checks
 - **Performance Optimization**: Broadcast joins, partition strategies, and optimized query patterns
-- **Comprehensive Logging**: Integrated logging and performance monitoring with TimeLogger
+- **Comprehensive Logging**: Integrated logging and performance monitoring with
 
 ## Installation
 
@@ -210,6 +216,538 @@ ON p.projectlead_id = u.id
 # Create or replace the materialized view
 result = mlv.create_or_replace(sql)
 display(result)
+```
+
+### Environment-as-Code
+
+#### Manage Lakehouse
+
+```python
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.items import Lakehouse
+
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME")
+workspace_id = workspace.item.id
+
+lakehouse = Lakehouse(workspace_id, name="LakehouseName")
+
+# Static methods
+lakehouse_by_id = Lakehouse.get_by_id(workspace_id, id="LAKEHOUSE_ID")
+lakehouse_by_name = Lakehouse.get_by_name(workspace_id, name="LAKEHOUSE_NAME")
+lakehouses = Lakehouse.list(workspace_id)
+
+# Create lakehouse
+lakehouse.create()
+lakehouse.create_if_not_exists()  # Save creation
+
+# Update lakehouse
+lakehouse.update(description="Updated description")
+
+# Fetch current api data
+lakehouse.fetch()
+
+# Check exists
+if lakehouse.exists():
+    pass
+
+# Delete
+lakehouse.delete()
+
+# API Fields
+id = lakehouse.item.api.id
+workspace_id = lakehouse.item.api.workspaceId
+display_name = lakehouse.item.api.displayName
+other = lakehouse.item.api.*
+
+# Setted fields
+fields: dict[str, Any] = lakehouse.item.fields
+
+```
+
+#### Manage WorkspaceFolder
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME>")
+workspace_id = workspace.item.id
+
+# Create folders
+root_folder = WorkspaceFolder(workspace_id, name="RootFolder")
+root_folder.create_if_not_exists()
+
+sub_folder = WorkspaceFolder(workspace_id, name="SubFolder", parent_folder=root_folder)
+sub_folder.create_if_not_exists()
+
+# Static methods
+folder_by_id = WorkspaceFolder.get_by_id(workspace_id, id="FOLDER_ID")
+folder_by_name = WorkspaceFolder.get_by_name(workspace_id, name="RootFolder")
+folders = WorkspaceFolder.list(workspace_id)
+
+# Update (rename)
+root_folder.update(displayName="RootFolderRenamed")
+
+# Fetch current api data
+root_folder.fetch()
+
+# Check exists
+if root_folder.exists():
+    pass
+
+# Delete
+sub_folder.delete()
+
+# API Fields
+id = root_folder.item.api.id
+workspace_id = root_folder.item.api.workspaceId
+display_name = root_folder.item.api.displayName
+parent_folder_id = root_folder.item.api.parentFolderId
+
+# Set fields
+fields: dict[str, Any] = root_folder.item.fields
+```
+
+#### Manage Warehouse
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.items import Warehouse
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME>")
+workspace_id = workspace.item.id
+
+folder = WorkspaceFolder(workspace_id, name="Warehouses")
+folder.create_if_not_exists()
+
+warehouse = Warehouse(
+    workspace_id=workspace_id,
+    name="WarehouseName",
+    description="Description",
+    folder=folder,
+    collation_type="Latin1_General_100_BIN2_UTF8"
+)
+
+# Static methods
+warehouse_by_id = Warehouse.get_by_id(workspace_id, id="WAREHOUSE_ID")
+warehouse_by_name = Warehouse.get_by_name(workspace_id, name="WarehouseName")
+warehouses = Warehouse.list(workspace_id)
+
+# Create
+warehouse.create()
+warehouse.create_if_not_exists()
+
+# Update
+warehouse.update(description="Updated description")
+
+# Fetch
+warehouse.fetch()
+
+# Exists
+if warehouse.exists():
+    pass
+
+# Delete
+warehouse.delete()
+
+# API Fields
+id = warehouse.item.api.id
+workspace_id = warehouse.item.api.workspaceId
+display_name = warehouse.item.api.displayName
+connection_string = warehouse.item.api.properties.connectionString
+collation_type = warehouse.item.api.properties.collationType
+
+# Set fields
+fields: dict[str, Any] = warehouse.item.fields
+```
+
+#### Manage Notebook
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.items import (
+    Notebook, IPYNBNotebookDefinition, CopyFabricNotebookDefinition
+)
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME>")
+workspace_id = workspace.item.id
+
+folder = WorkspaceFolder(workspace_id, name="Notebooks")
+folder.create_if_not_exists()
+
+# Empty notebook
+notebook = Notebook(
+    workspace_id=workspace_id,
+    name="NotebookName",
+    description="Description",
+    folder=folder
+)
+
+# From .ipynb file
+ipynb_def = IPYNBNotebookDefinition(ipynb_path="/path/to/notebook.ipynb")
+notebook_from_ipynb = Notebook(
+    workspace_id=workspace_id,
+    name="NotebookFromIpynb",
+    description="Description",
+    definition=ipynb_def,
+    folder=folder
+)
+
+# From copy
+copy_def = CopyFabricNotebookDefinition("<SOURCE_WORKSPACE_ID>", "<SOURCE_NOTEBOOK_ID>")
+notebook_from_copy = Notebook(
+    workspace_id=workspace_id,
+    name="NotebookFromCopy",
+    description="Description",
+    definition=copy_def,
+    folder=folder
+)
+
+# Static methods
+nb_by_id = Notebook.get_by_id(workspace_id, id="NOTEBOOK_ID")
+nb_by_name = Notebook.get_by_name(workspace_id, name="NotebookName")
+notebooks = Notebook.list(workspace_id)
+
+# Create
+notebook.create_if_not_exists()
+
+# Update
+notebook.update(description="Updated description")
+
+# Fetch
+notebook.fetch()
+
+# Exists
+if notebook.exists():
+    pass
+
+# Delete
+notebook.delete()
+
+# API Fields
+id = notebook.item.api.id
+workspace_id = notebook.item.api.workspaceId
+display_name = notebook.item.api.displayName
+
+# Set fields
+fields: dict[str, Any] = notebook.item.fields
+```
+
+#### Manage DataPipeline
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.items import (
+    DataPipeline, ZIPDataPipelineDefinition, CopyDataPipelineDefinition
+)
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME>")
+workspace_id = workspace.item.id
+
+folder = WorkspaceFolder(workspace_id, name="Pipelines")
+folder.create_if_not_exists()
+
+# Empty pipeline
+pipeline = DataPipeline(
+    workspace_id=workspace_id,
+    name="PipelineName",
+    description="Description",
+    folder=folder
+)
+
+# From ZIP definition
+zip_def = ZIPDataPipelineDefinition(zip_path="/path/to/pipeline.zip")
+pipeline_from_zip = DataPipeline(
+    workspace_id=workspace_id,
+    name="PipelineFromZip",
+    description="Description",
+    definition=zip_def,
+    folder=folder
+)
+
+# From copy
+copy_def = CopyDataPipelineDefinition("<SOURCE_WORKSPACE_ID>", "<SOURCE_PIPELINE_ID>")
+pipeline_from_copy = DataPipeline(
+    workspace_id=workspace_id,
+    name="PipelineFromCopy",
+    description="Description",
+    definition=copy_def,
+    folder=folder
+)
+
+# Static methods
+dp_by_id = DataPipeline.get_by_id(workspace_id, id="PIPELINE_ID")
+dp_by_name = DataPipeline.get_by_name(workspace_id, name="PipelineName")
+pipelines = DataPipeline.list(workspace_id)
+
+# Create
+pipeline.create_if_not_exists()
+
+# Update
+pipeline.update(description="Updated description")
+
+# Fetch
+pipeline.fetch()
+
+# Exists
+if pipeline.exists():
+    pass
+
+# Delete
+pipeline.delete()
+
+# API Fields
+id = pipeline.item.api.id
+workspace_id = pipeline.item.api.workspaceId
+display_name = pipeline.item.api.displayName
+
+# Set fields
+fields: dict[str, Any] = pipeline.item.fields
+```
+
+#### Manage VariableLibrary
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.items import (
+    VariableLibrary, VariableLibraryDefinition, VariableLibraryVariable
+)
+
+workspace = Workspace.get_by_name("<WORKSPACE_NAME>")
+workspace_id = workspace.item.id
+
+folder = WorkspaceFolder(workspace_id, name="Variables")
+folder.create_if_not_exists()
+
+definition = VariableLibraryDefinition(
+    ["TEST", "PROD"],
+    VariableLibraryVariable(name="ApiUrl", note="", type="String", value="https://api.test"),
+    VariableLibraryVariable(name="ApiKey", note="", type="String", value="secret")
+)
+
+varlib = VariableLibrary(
+    workspace_id=workspace_id,
+    name="VariableLibrary",
+    description="Description",
+    folder=folder,
+    definition=definition
+)
+
+# Static methods
+vl_by_id = VariableLibrary.get_by_id(workspace_id, id="VARIABLE_LIBRARY_ID")
+vl_by_name = VariableLibrary.get_by_name(workspace_id, name="VariableLibrary")
+varlibs = VariableLibrary.list(workspace_id)
+
+# Create
+varlib.create_if_not_exists()
+
+# Update
+varlib.update(description="Updated description")
+
+# Fetch
+varlib.fetch()
+
+# Exists
+if varlib.exists():
+    pass
+
+# Delete
+varlib.delete()
+
+# API Fields
+id = varlib.item.api.id
+workspace_id = varlib.item.api.workspaceId
+display_name = varlib.item.api.displayName
+active_value_set = varlib.item.api.properties.activeValueSetName
+
+# Set fields
+fields: dict[str, Any] = varlib.item.fields
+```
+
+#### Manage Workspace
+
+```python
+from fabricengineer.api.fabric.workspace.workspace import Workspace
+
+# Create
+ws = Workspace(
+    name="MyWorkspace",
+    description="New Workspace",
+    capacity_id="<CAPACITY_ID>"  # Optional
+)
+ws.create()
+ws.create_if_not_exists()
+
+# Static methods
+ws_by_id = Workspace.get_by_id("WORKSPACE_ID")
+ws_by_name = Workspace.get_by_name("MyWorkspace")
+workspaces = Workspace.list()
+
+# Update
+ws.update(description="Updated description")
+
+# Fetch
+ws.fetch()
+
+# Exists
+if ws.exists():
+    pass
+
+# Delete
+ws.delete()
+
+# API Fields
+id = ws.item.api.id
+display_name = ws.item.api.displayName
+description = ws.item.api.description
+capacity_id = ws.item.api.capacityId
+capacity_region = ws.item.api.capacityRegion
+one_lake_blob = ws.item.api.oneLakeEndpoints.blobEndpoint
+one_lake_dfs = ws.item.api.oneLakeEndpoints.dfsEndpoint
+
+# Set fields
+fields: dict[str, Any] = ws.item.fields
+```
+
+#### Use WorkspaceItemCreationPipeline
+
+```python
+from fabricengineer.api.fabric.workspace.folder.folder import WorkspaceFolder
+from fabricengineer.api.fabric.workspace.items import (
+    DataPipeline, CopyDataPipelineDefinition, ZIPDataPipelineDefinition,
+    Notebook, CopyFabricNotebookDefinition, IPYNBNotebookDefinition,
+    VariableLibrary, VariableLibraryProperties, VariableLibraryDefinition
+    Warehouse,
+    Lakehouse
+)
+from fabricengineer.api.fabric.workspace.create_pipeline import (
+    WorkspaceItemCreationPipeline,
+    PipelineItemStatus
+)
+
+
+workspace_id = "<WORKSPACE_ID>"
+
+# Folders
+root_folder = WorkspaceFolder(workspace_id, name="RootFolder")
+sub_folder = WorkspaceFolder(workspace_id, name="SubFolder", parent_folder=root_folder)
+
+# DataPipeline
+data_pipeline_empty = DataPipeline(
+    workspace_id=workspace_id,
+    name=name,
+    description="Description",
+    folder=None
+)
+
+zip_path = "/path/to/pipeline.zip"
+zip_defintion = ZIPDataPipelineDefinition(zip_path=path)
+data_pipeline_from_zip = DataPipeline(
+    workspace_id=workspace_id,
+    name=name,
+    description="Description",
+    definition=zip_definition,
+    folder=root_folder
+)
+
+copy_data_pipeline_definition = CopyDataPipelineDefinition("<WORKSPACE_ID>", "<PIPELINE_ID>")
+data_pipeline_copy = DataPipeline(
+    workspace_id=workspace_id,
+    name=name,
+    description="Description",
+    definition=copy_data_pipeline_definition,
+    folder=sub_folder
+)
+
+# Lakehouse
+lakehouse = Lakehouse(
+    workspace_id=workspace_id,
+    name="LakehouseName",
+    description="Description",
+    folder=root_folder
+)
+
+# Notebook
+notebook_empty = Notebook(
+    workspace_id=workspace_id,
+    name="Notebook",
+    description="Description",
+    folder=None
+)
+
+ipynb_path = "/path/to/notebook.ipynb"
+ipynb_notebook_definition = IPYNBNotebookDefinition(ipynb_path=ipynb_path)
+notebook_from_ipynb = Notebook(
+    workspace_id=workspace_id,
+    name="Notebook",
+    description="Description",
+    definition=ipynb_notebook_definition,
+    folder=None
+)
+
+copy_notebook_definition = CopyFabricNotebookDefinition("<WORKSPACE_ID>", "<NOTEBOOK_ID>")
+notebook_from_copy = Notebook(
+    workspace_id=workspace_id,
+    name="Notebook",
+    description="Description",
+    definition=copy_notebook_definition,
+    folder=None
+)
+
+# VariableLibrary
+varlib_definition = VariableLibraryDefinition(
+    ["TEST", "PROD"],
+    VariableLibraryVariable(
+        name="Variable1",
+        note="",
+        type="String",
+        value="blub-default"
+    ),
+    VariableLibraryVariable(
+        name="Variable2",
+        note="",
+        type="String",
+        value="blab-default"
+    )
+)
+
+variable_library = VariableLibrary(
+    workspace_id=WORKSPACE_ID,
+    name="VariableLibrary",
+    definition=definition
+)
+
+# Warehouse
+warehouse = Warehouse(
+    workspace_id=workspace_id,
+    name="WarehouseName",
+    description="Description",
+    folder=root_folder
+)
+
+# Create and execute WorkspaceItemCreationPipeline
+pipeline = WorkspaceItemCreationPipeline([
+    root_folder,
+    sub_folder,
+    data_pipeline_empty,
+    data_pipeline_from_zip,
+    data_pipeline_copy,
+    notebook_empty,
+    notebook_from_ipynb,
+    notebook_from_copy,
+    variable_library,
+    lakehouse,
+    warehouse
+])
+
+result = pipeline.run(in_parallel=True)
+print(result)
 ```
 
 ### Remote Module Import for Fabric Notebooks
