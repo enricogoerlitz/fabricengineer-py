@@ -93,15 +93,24 @@ class CreationPipelineResult:
 
 
 class WorkspaceItemCreationPipeline:
-    def __init__(self, items: list[BaseWorkspaceItem]):
-        self._items = items
-        self._prepare_items()
+    def __init__(self, items: list[BaseWorkspaceItem] = None):
+        self.set_items(items)
 
     @property
     def items(self) -> list[BaseWorkspaceItem]:
         return self._items
 
-    def run(self, *, in_parallel: bool = True, max_workers: int = None) -> CreationPipelineResult:
+    def set_items(self, items: list[BaseWorkspaceItem]) -> "WorkspaceItemCreationPipeline":
+        self._items = items
+        self._prepare_items()
+        return self
+
+    def run(
+            self,
+            *,
+            in_parallel: bool = True,
+            max_workers: int = None
+    ) -> CreationPipelineResult:
         """Run the creation pipeline for the workspace items."""
         finished_pipeline_items = set()
         pipeline_items = [
@@ -109,10 +118,12 @@ class WorkspaceItemCreationPipeline:
             for item in self._items
         ]
 
+        result = None
         if in_parallel:
-            return self._run_in_parallel(pipeline_items, max_workers=max_workers)
-
-        return self._run_in_sequence(pipeline_items)
+            result = self._run_in_parallel(pipeline_items, max_workers=max_workers)
+        else:
+            result = self._run_in_sequence(pipeline_items)
+        return result
 
     def _run_in_sequence(self, pipeline_items: list[PipelineItem]) -> CreationPipelineResult:
         """Run the creation pipeline in sequence."""
@@ -143,6 +154,9 @@ class WorkspaceItemCreationPipeline:
 
     def _prepare_items(self) -> None:
         """Prepare the items by resolving and adding any missing dependencies."""
+        if self._items is None:
+            self._items = []
+            return
         depends_on_items = []
         for item in self._items:
             depends_on_items.extend([it.item for it in item.upstream_items])

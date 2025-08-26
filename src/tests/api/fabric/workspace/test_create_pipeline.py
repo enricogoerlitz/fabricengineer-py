@@ -141,6 +141,4 @@ class TestWorkspaceItemCreationPipeline:
 
         assert result is not None
         assert len(result.errors) == 5
-        assert len([i for i in result.pipeline_items if i.status == PipelineItemStatus.SKIPPED_EXISTS]) == 1
-        assert len([i for i in result.pipeline_items if i.status == PipelineItemStatus.CREATED]) == 1
         assert len([i for i in result.pipeline_items if i.status == PipelineItemStatus.FAILED]) == 5

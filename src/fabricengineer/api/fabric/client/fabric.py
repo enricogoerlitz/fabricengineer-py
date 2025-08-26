@@ -2,6 +2,7 @@ import os
 import requests
 
 from fabricengineer.setup import notebookutils
+from fabricengineer.api.fabric.client.utils import retry
 from fabricengineer.api.fabric.client.workspace import FabricAPIWorkspaceClient
 from fabricengineer.api.auth import MicrosoftExtraSVC
 from fabricengineer.logging import logger
@@ -76,6 +77,7 @@ class FabricAPIClient:
             "Content-Type": "application/json"
         }
 
+    @retry(count=3, on=[429], delay=15)
     def get(self, path: str) -> requests.Response:
         """
         Send a GET request to the specified API endpoint.
@@ -91,6 +93,7 @@ class FabricAPIClient:
         resp = requests.get(url, headers=self.headers)
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def post(self, path: str, payload: dict) -> requests.Response:
         """
         Send a POST request to the specified API endpoint.
@@ -111,6 +114,7 @@ class FabricAPIClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def patch(self, path: str, payload: dict) -> requests.Response:
         """
         Send a PATCH request to the specified API endpoint.
@@ -131,6 +135,7 @@ class FabricAPIClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def put(self, path: str, payload: dict) -> requests.Response:
         """
         Send a PUT request to the specified API endpoint.
@@ -151,6 +156,7 @@ class FabricAPIClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def delete(self, path: str) -> requests.Response:
         """
         Send a DELETE request to the specified API endpoint.

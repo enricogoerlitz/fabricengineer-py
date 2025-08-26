@@ -1,5 +1,7 @@
 import requests
 
+from fabricengineer.api.fabric.client.utils import retry
+
 
 class FabricAPIWorkspaceClient:
     """Client to interact with Fabric Workspaces API endpoints."""
@@ -7,6 +9,7 @@ class FabricAPIWorkspaceClient:
         self._client = client
         self._base_url = f"{client.base_url}/workspaces"
 
+    @retry(count=3, on=[429], delay=15)
     def get(
             self,
             workspace_id: str = None,
@@ -27,6 +30,7 @@ class FabricAPIWorkspaceClient:
         resp = requests.get(url, headers=self._client.headers)
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def post(
             self,
             workspace_id: str = None,
@@ -53,6 +57,7 @@ class FabricAPIWorkspaceClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def patch(
             self,
             workspace_id: str = None,
@@ -79,6 +84,7 @@ class FabricAPIWorkspaceClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def put(
         self,
         workspace_id: str = None,
@@ -105,6 +111,7 @@ class FabricAPIWorkspaceClient:
         )
         return resp
 
+    @retry(count=3, on=[429], delay=15)
     def delete(
         self,
         workspace_id: str = None,

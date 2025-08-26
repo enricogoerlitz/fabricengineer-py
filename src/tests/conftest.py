@@ -70,6 +70,7 @@ def workspace_id():
 
 @pytest.fixture(scope="session")
 def workspace():
+    set_global_fabric_client(svc)
     workspace_id = os.getenv("WORKSPACE_ID")
     workspace = Workspace.get_by_id(workspace_id)
     assert isinstance(workspace_id, str) and len(workspace_id) > 0, "WORKSPACE_ID must be set in the environment variables."
