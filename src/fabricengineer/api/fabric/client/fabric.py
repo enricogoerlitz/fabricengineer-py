@@ -1,6 +1,7 @@
 import os
 import requests
 
+from fabricengineer.setup import notebookutils
 from fabricengineer.api.fabric.client.workspace import FabricAPIWorkspaceClient
 from fabricengineer.api.auth import MicrosoftExtraSVC
 from fabricengineer.logging import logger
@@ -19,7 +20,7 @@ def get_env_svc() -> MicrosoftExtraSVC | None:
     Returns:
         MicrosoftExtraSVC | None: The MicrosoftExtraSVC instance or None if not found.
     """
-    if "notebookutils" in globals():
+    if notebookutils() is not None:
         logger.info("Using notebookutils for authentication.")
         return None
 
@@ -196,12 +197,12 @@ class FabricAPIClient:
         Returns:
             str: The authentication token.
         """
-        if self._msf_svc is None and "notebookutils" not in globals():
+        if self._msf_svc is None and notebookutils() is None:
             logger.warning("No authentication method available. Token is empty.")
             return ""
-        elif "notebookutils" in globals():
+        elif notebookutils() is not None:
             logger.info("Getting token via notebookutils.")
-            token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")  # noqa: F821 # type: ignore
+            token = notebookutils().credentials.getToken("https://api.fabric.microsoft.com")  # noqa: F821 # type: ignore
             return token
         logger.info("Getting token via Microsoft Fabric Service Principal.")
         token = self._msf_svc.token()
