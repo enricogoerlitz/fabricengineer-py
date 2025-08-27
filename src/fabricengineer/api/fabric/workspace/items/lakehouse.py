@@ -145,7 +145,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
         while True:
             state = self.fetch().item.api.properties.sqlEndpointProperties.provisioningStatus
             logger.info(f"Lakehouse '{self.item.api.displayName}' current state: {state}")
-            if state != "InProgress":
+            if state != "InProgress" and state is not None:
                 logger.info(f"Lakehouse '{self.item.api.displayName}' SQL endpoint provisioning completed with state: {state}.")
                 break
 
