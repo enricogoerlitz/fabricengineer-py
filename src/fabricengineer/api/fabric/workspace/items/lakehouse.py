@@ -82,7 +82,7 @@ class Lakehouse(BaseWorkspaceItem[LakehouseAPIData]):
             item["properties"] = {
                 "sqlEndpointProperties": {}
             }
-        if "sqlEndpointProperties" not in item["properties"]:
+        if not item["properties"].get("sqlEndpointProperties"):
             item["properties"]["sqlEndpointProperties"] = {}
         kwargs["properties"] = LakehouseProperties(**item["properties"])
         kwargs["properties"].sqlEndpointProperties = LakehouseSqlEndpointProperties(
